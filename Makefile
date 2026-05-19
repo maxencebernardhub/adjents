@@ -3,6 +3,7 @@
 install:
 	cd backend && uv sync --all-groups
 	cd frontend && pnpm install
+	mkdir -p data/outputs data/chroma
 
 dev:
 	@trap 'kill %1 %2 2>/dev/null; exit' INT TERM; \

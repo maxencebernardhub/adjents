@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-19 | Branch: main | Milestone: v0.1 — MVP (scaffold)
+> Updated: 2026-05-19 | Branch: main | Milestone: v0.1 — MVP (setup)
 
 ---
 
@@ -34,9 +34,9 @@
 | Step | Status |
 | --- | :---: |
 | `.env` created from `.env.example` | ✅ |
-| `git init` + scaffold commit | ⏳ |
-| `uv sync` (backend deps) | — |
-| `pnpm install` (frontend deps) | — |
+| `git init` + scaffold commit | ✅ |
+| `uv sync` (backend deps) | ✅ |
+| `pnpm install` (frontend deps) | ✅ |
 | Ollama running + model pulled | — |
 
 ---
@@ -46,19 +46,19 @@
 - Defined full product vision (`docs/VISION.md`) and architecture (`docs/ARCHITECTURE.md`)
 - Created complete project scaffold: backend Python structure, frontend React/TS structure, Makefile, `pyproject.toml`, `package.json`, prompt placeholders
 - All dependencies set to latest stable versions (Python + JS)
-- Initialized git repository and staged first commit
+- `make install` completed: 100 Python packages (uv), 219 JS packages (pnpm 11.1.3)
+- VS Code Python interpreter pointed to `backend/.venv/bin/python` (Python 3.13.13)
 
-**Stopped at:** first commit pending (PROJECT_STATE.md update in progress)
+**Stopped at:** lockfiles commit + ready to start first feature
 
 ---
 
 ## Next steps
 
-1. **Commit the scaffold** (this file was the last thing to update)
-2. **`make install`** — install backend + frontend dependencies; validate that Vite 8 / ESLint 10 configs work
-3. **First feature spec** — run `/feature` for the Generator Agent onboarding interview
-4. **Core Pydantic models** — `AgentSpec`, `AgentState`, `Message`, `Skill`, `Memory`, `Conversation`, `Deliverable`
-5. **Database layer** — SQLModel table definitions + engine setup
+1. **Pull Ollama model** — `ollama pull qwen3.5:9b` (required for local inference)
+2. **Core Pydantic models** — `AgentSpec`, `AgentState`, `Message`, `Skill`, `Memory`, `Conversation`, `Deliverable`
+3. **Database layer** — SQLModel table definitions + engine setup
+4. **First feature spec** — run `/feature` for the Generator Agent onboarding interview
 
 ---
 
