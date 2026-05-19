@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend — Lint, Typecheck & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+        working-directory: backend
+
+      - name: Lint with Ruff
+        run: uv run ruff check .
+        working-directory: backend
+
+      - name: Check formatting with Ruff
+        run: uv run ruff format --check .
+        working-directory: backend
+
+      - name: Typecheck with mypy
+        run: uv run mypy --strict adjents/
+        working-directory: backend
+
+      - name: Run tests
+        run: uv run pytest
+        working-directory: backend
+
+  frontend:
+    name: Frontend — Lint, Typecheck & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: frontend
+
+      - name: Lint with ESLint
+        run: pnpm lint
+        working-directory: frontend
+
+      - name: Check formatting with Prettier
+        run: pnpm format:check
+        working-directory: frontend
+
+      - name: Typecheck with tsc
+        run: pnpm typecheck
+        working-directory: frontend
+
+      - name: Run tests
+        run: pnpm test --run
+        working-directory: frontend
