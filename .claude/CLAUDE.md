@@ -75,7 +75,8 @@ make typecheck  # mypy --strict + tsc --noEmit
 - Read the full target file before editing it.
 - Prefer targeted edits over broad refactors. One file changed if one file suffices.
 - Do not rename or move files without an explicit reason.
-- Use `.venv` for Python execution. Use `uv` to manage the environment.
+- Use `uv run <cmd>` to invoke Python tools (pytest, ruff, mypy). Never call `.venv/bin/` directly.
+- Update `PROJECT_STATE.md` at the end of every completed feature or significant task.
 - When unsure on a load-bearing decision not covered in VISION.md or ARCHITECTURE.md,
   ask before implementing.
 

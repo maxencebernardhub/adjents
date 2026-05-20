@@ -89,6 +89,7 @@ libraries for specific sub-problems.
 | Ollama calls | `httpx` (async HTTP) | Ollama exposes a simple REST API |
 | Vector database | `chromadb` | Local-first, no server required |
 | SQLite ORM | `sqlmodel` | Pydantic + SQLAlchemy, matches our stack |
+| Async SQLite driver | `aiosqlite` | Non-blocking SQLite access in asyncio coroutines (see ADR 0003) |
 
 The agent loop, message bus, router, and scheduler are written from scratch. Each
 module is 100–300 lines. We keep full control and avoid dependency lock-in.
@@ -246,6 +247,81 @@ class Deliverable(BaseModel):
     file_path: str                   # Relative path under data/outputs/
     created_at: datetime
 ```
+
+### `BlockingQuestion`
+
+A human-decision request raised by an agent when it cannot proceed without input.
+Persisted in SQLite so it survives restarts and can be matched to its `blocking_answer`
+WebSocket response. See ADR 0004.
+
+```python
+class BlockingQuestion(BaseModel):
+    id: str
+    agent_id: str
+    question: str
+    context: str | None    # why the agent needs this decision
+    answered: bool
+    answer: str | None
+    created_at: datetime
+    answered_at: datetime | None
+```
+
+---
+
+### Persistence layer — SQLModel tables (`db/`)
+
+The Pydantic models in §3 are the **domain and API layer**: they define the data
+contracts used by FastAPI responses, agent logic, and inter-module communication.
+They are deliberately kept free of persistence concerns.
+
+Persistence is handled by a **separate set of SQLModel table classes** in
+`backend/adjents/db/tables.py`. Each table class mirrors a domain model but inherits
+from `SQLModel` with `table=True`. Explicit conversion functions in
+`backend/adjents/db/convert.py` translate between the two layers.
+
+**Why two separate layers** (see ADR 0002 for full rationale):
+
+- SQLModel `table=True` imposes field annotations (`primary_key`, `__tablename__`)
+  that are persistence details and do not belong in the domain model.
+- `list[str]` and `dict[str, Any]` fields are not natively supported by SQLite.
+  They are JSON-serialized in the DB layer only — the domain model stays clean.
+- FastAPI uses the Pydantic models as response schemas. Mixing SQLModel internals
+  into those models would bleed persistence details into the API contract.
+
+### Fields requiring JSON serialization
+
+The following field types are stored as JSON strings in SQLite and deserialized on
+read. This is handled exclusively in the `db/` layer:
+
+| Model | Field | SQLite storage |
+| --- | --- | --- |
+| `AgentSpec` | `responsibilities`, `skill_ids`, `escalation_rules` | `TEXT` (JSON array) |
+| `AgentState` | `meeting_with` | `TEXT` (JSON array) |
+| `Skill` | `inputs`, `outputs` | `TEXT` (JSON array) |
+| `Message` | `metadata` | `TEXT` (JSON object) |
+| `Memory` | `metadata` | `TEXT` (JSON object) |
+| `Conversation` | `participant_agents`, `message_ids` | `TEXT` (JSON array) |
+| `Project` | `deliverable_descriptions`, `contributor_agent_ids` | `TEXT` (JSON array) |
+
+### DB engine setup
+
+`backend/adjents/db/engine.py` owns the SQLite engine and session lifecycle.
+Sessions are **async** throughout — see ADR 0003.
+
+```python
+engine = create_async_engine("sqlite+aiosqlite:///./data/adjents.db")
+
+async def create_db_and_tables() -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSession(engine) as session:
+        yield session
+```
+
+Called once at FastAPI startup (`lifespan`). All agent loops and API routes use
+`await session.exec(...)` — no synchronous DB calls anywhere in the codebase.
 
 ---
 
