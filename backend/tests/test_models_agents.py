@@ -1,11 +1,17 @@
-"""Tests for agents.models: AgentSpec, AgentState, AgentStatus, Skill."""
+"""Tests for agents domain models: AgentSpec, AgentState, AgentStatus, Skill."""
 
 from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
-from adjents.agents.models import AgentSpec, AgentState, AgentStatus, Skill
+from adjents.agents.models import (
+    AgentSpec,
+    AgentState,
+    AgentStatus,
+    BlockingQuestion,
+    Skill,
+)
 
 
 def make_skill() -> Skill:
@@ -221,3 +227,81 @@ def test_agent_state_serialisation_roundtrip() -> None:
     data = state.model_dump()
     restored = AgentState.model_validate(data)
     assert restored == state
+
+
+# --- BlockingQuestion ---
+
+
+def test_blocking_question_valid() -> None:
+    bq = BlockingQuestion(
+        id="bq-001",
+        agent_id="agent-001",
+        question="Should I send the overdue invoice reminder to Acme Corp?",
+        context="Invoice #42 is 15 days overdue. Escalation threshold is 14 days.",
+        answered=False,
+        answer=None,
+        created_at=datetime(2026, 5, 20, 10, 0, tzinfo=UTC),
+        answered_at=None,
+    )
+    assert bq.id == "bq-001"
+    assert bq.answered is False
+    assert bq.answer is None
+    assert bq.answered_at is None
+
+
+def test_blocking_question_answered_state() -> None:
+    bq = BlockingQuestion(
+        id="bq-002",
+        agent_id="agent-001",
+        question="Confirm budget increase for Q3 campaign?",
+        context=None,
+        answered=True,
+        answer="Yes, approved up to $500.",
+        created_at=datetime(2026, 5, 20, 9, 0, tzinfo=UTC),
+        answered_at=datetime(2026, 5, 20, 9, 30, tzinfo=UTC),
+    )
+    assert bq.answered is True
+    assert bq.answer == "Yes, approved up to $500."
+    assert bq.answered_at is not None
+
+
+def test_blocking_question_no_context() -> None:
+    bq = BlockingQuestion(
+        id="bq-003",
+        agent_id="agent-002",
+        question="Proceed with vendor switch?",
+        context=None,
+        answered=False,
+        answer=None,
+        created_at=datetime(2026, 5, 20, tzinfo=UTC),
+        answered_at=None,
+    )
+    assert bq.context is None
+
+
+def test_blocking_question_missing_required_field() -> None:
+    with pytest.raises(ValidationError):
+        BlockingQuestion(  # type: ignore[call-arg]
+            id="bq-x",
+            agent_id="agent-001",
+            context=None,
+            answered=False,
+            answer=None,
+            created_at=datetime(2026, 5, 20, tzinfo=UTC),
+            answered_at=None,
+        )
+
+
+def test_blocking_question_serialisation_roundtrip() -> None:
+    bq = BlockingQuestion(
+        id="bq-001",
+        agent_id="agent-001",
+        question="Approve the new pricing tier?",
+        context="Current tier expires end of month.",
+        answered=False,
+        answer=None,
+        created_at=datetime(2026, 5, 20, tzinfo=UTC),
+        answered_at=None,
+    )
+    restored = BlockingQuestion.model_validate(bq.model_dump())
+    assert restored == bq

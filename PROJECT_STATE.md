@@ -10,7 +10,7 @@
 | --- | :---: | :---: | :---: |
 | Project scaffold | ✅ | ✅ | — |
 | Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | ✅ | ✅ |
-| Database layer (SQLModel + SQLite) | — | — | — |
+| Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
 | Generator Agent — interview | — | — | — |
 | Generator Agent — org generation | — | — | — |
 | LLM router | — | — | — |
@@ -51,14 +51,14 @@
   - `projects/models.py` — `Project`, `ProjectStatus` (`StrEnum`)
   - `deliverables/models.py` — `Deliverable`
 
-**Stopped at:** models committed on `feat/core-pydantic-models`, PR not yet opened
+**Stopped at:** DB layer committed, `feat/core-pydantic-models` merged into main
 
 ---
 
 ## Next steps
 
-1. **Database layer** — SQLModel table definitions + engine setup (`db/`)
-2. **First feature spec** — run `/feature` for the Generator Agent onboarding interview
+1. **First feature spec** — run `/feature` for the Generator Agent onboarding interview
+2. **Generator Agent** — interview flow implementation
 
 ---
 

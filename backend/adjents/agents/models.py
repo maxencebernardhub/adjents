@@ -1,4 +1,4 @@
-"""Core data models for agents: AgentSpec, AgentState, AgentStatus, Skill."""
+"""Agent domain models: AgentSpec, AgentState, AgentStatus, Skill, BlockingQuestion."""
 
 from datetime import datetime
 from enum import StrEnum
@@ -47,3 +47,14 @@ class AgentState(BaseModel):
     current_task_summary: str | None
     meeting_with: list[str]  # agent IDs when in a meeting
     updated_at: datetime
+
+
+class BlockingQuestion(BaseModel):
+    id: str
+    agent_id: str
+    question: str
+    context: str | None  # why the agent needs this decision
+    answered: bool
+    answer: str | None
+    created_at: datetime
+    answered_at: datetime | None
