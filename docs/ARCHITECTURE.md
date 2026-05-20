@@ -138,7 +138,7 @@ many times per minute. Keeping them separate avoids constant overwrites of the f
 spec record.
 
 ```python
-class AgentStatus(str, Enum):
+class AgentStatus(StrEnum):
     IDLE = "idle"
     WORKING = "working"
     IN_MEETING_1ON1 = "meeting_1on1"
@@ -219,7 +219,7 @@ class Conversation(BaseModel):
 Defined here for reference even though the feature lands in v0.2.
 
 ```python
-class ProjectStatus(str, Enum):
+class ProjectStatus(StrEnum):
     ACTIVE = "active"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
@@ -288,10 +288,18 @@ from `SQLModel` with `table=True`. Explicit conversion functions in
 - FastAPI uses the Pydantic models as response schemas. Mixing SQLModel internals
   into those models would bleed persistence details into the API contract.
 
-### Fields requiring JSON serialization
+### Fields requiring serialization
 
-The following field types are stored as JSON strings in SQLite and deserialized on
-read. This is handled exclusively in the `db/` layer:
+Two types of fields require explicit serialization in the `db/` layer:
+
+**`datetime` fields** are stored as ISO 8601 strings (`datetime.isoformat()`) in all
+table classes. `datetime.fromisoformat()` (Python 3.11+, timezone-aware) restores them
+on read. This avoids SQLAlchemy's default behavior of stripping timezone info from
+SQLite `DATETIME` columns.
+
+**`list[str]` and `dict[str, Any]` fields** are stored as JSON text (`json.dumps` /
+`json.loads`). The table column name differs from the Pydantic field name when needed
+to avoid SQLAlchemy reserved names (e.g. `metadata` → `metadata_json`).
 
 | Model | Field | SQLite storage |
 | --- | --- | --- |

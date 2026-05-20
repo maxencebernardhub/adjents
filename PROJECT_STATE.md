@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-20 | Branch: feat/core-pydantic-models | Milestone: v0.1 — MVP
+> Updated: 2026-05-20 | Branch: main | Milestone: v0.1 — MVP
 
 ---
 
@@ -45,13 +45,20 @@
 
 - Ollama model pulled (`qwen3.5:9b`) — local inference ready
 - Core Pydantic models implemented (TDD, 44 tests, ruff + mypy --strict clean):
-  - `agents/models.py` — `AgentSpec`, `AgentState`, `AgentStatus` (`StrEnum`), `Skill`
+  - `agents/models.py` — `AgentSpec`, `AgentState`, `AgentStatus` (`StrEnum`), `Skill`, `BlockingQuestion`
   - `messaging/models.py` — `Message`, `Conversation`
   - `memory/models.py` — `Memory`
   - `projects/models.py` — `Project`, `ProjectStatus` (`StrEnum`)
   - `deliverables/models.py` — `Deliverable`
+- Database layer implemented (TDD, 80 tests total, ruff + mypy --strict clean):
+  - `db/tables.py` — 9 SQLModel table classes (one per domain model)
+  - `db/engine.py` — async engine (`aiosqlite`), `create_db_and_tables`, `get_session`
+  - `db/convert.py` — 18 `to_table`/`from_table` functions; JSON + ISO 8601 serialization
+  - `tests/conftest.py` — shared async in-memory fixture for DB tests
+- ADR 0002 (séparation Pydantic/SQLModel), ADR 0003 (sessions async), ADR 0004 (BlockingQuestion) documentés
+- `feat/core-pydantic-models` mergé dans main, branche locale supprimée
 
-**Stopped at:** DB layer committed, `feat/core-pydantic-models` merged into main
+**Stopped at:** merge terminé — prêt pour la feature spec du Generator Agent
 
 ---
 
@@ -84,3 +91,6 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-18 | Hierarchy depth = `int`, no cap | Complex businesses may need N-3 or deeper |
 | 2026-05-18 | MCP for integrations (to validate at v0.2 start) | Reuse open ecosystem rather than custom connectors |
 | 2026-05-18 | Projects feature deferred to v0.2 | v0.1 focuses on core autonomous loop |
+| 2026-05-20 | Pydantic domain models ≠ SQLModel tables (ADR 0002) | Persistence concerns isolated in `db/`; FastAPI contract stays clean |
+| 2026-05-20 | Async SQLite sessions via aiosqlite (ADR 0003) | asyncio-first app; sync sessions would block the event loop |
+| 2026-05-20 | BlockingQuestion as first-class persisted entity (ADR 0004) | Schema complet dès le début; shape connue via le protocole WebSocket |
