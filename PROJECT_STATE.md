@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-19 | Branch: main | Milestone: v0.1 — MVP (setup)
+> Updated: 2026-05-20 | Branch: feat/core-pydantic-models | Milestone: v0.1 — MVP
 
 ---
 
@@ -9,7 +9,7 @@
 | Feature | Spec | Impl | Tests |
 | --- | :---: | :---: | :---: |
 | Project scaffold | ✅ | ✅ | — |
-| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | — | — |
+| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | ✅ | ✅ |
 | Database layer (SQLModel + SQLite) | — | — | — |
 | Generator Agent — interview | — | — | — |
 | Generator Agent — org generation | — | — | — |
@@ -37,28 +37,28 @@
 | `git init` + scaffold commit | ✅ |
 | `uv sync` (backend deps) | ✅ |
 | `pnpm install` (frontend deps) | ✅ |
-| Ollama running + model pulled | — |
+| Ollama running + model pulled (`qwen3.5:9b`) | ✅ |
 
 ---
 
-## Last session — 2026-05-19
+## Last session — 2026-05-20
 
-- Defined full product vision (`docs/VISION.md`) and architecture (`docs/ARCHITECTURE.md`)
-- Created complete project scaffold: backend Python structure, frontend React/TS structure, Makefile, `pyproject.toml`, `package.json`, prompt placeholders
-- All dependencies set to latest stable versions (Python + JS)
-- `make install` completed: 100 Python packages (uv), 219 JS packages (pnpm 11.1.3)
-- VS Code Python interpreter pointed to `backend/.venv/bin/python` (Python 3.13.13)
+- Ollama model pulled (`qwen3.5:9b`) — local inference ready
+- Core Pydantic models implemented (TDD, 44 tests, ruff + mypy --strict clean):
+  - `agents/models.py` — `AgentSpec`, `AgentState`, `AgentStatus` (`StrEnum`), `Skill`
+  - `messaging/models.py` — `Message`, `Conversation`
+  - `memory/models.py` — `Memory`
+  - `projects/models.py` — `Project`, `ProjectStatus` (`StrEnum`)
+  - `deliverables/models.py` — `Deliverable`
 
-**Stopped at:** lockfiles commit + ready to start first feature
+**Stopped at:** models committed on `feat/core-pydantic-models`, PR not yet opened
 
 ---
 
 ## Next steps
 
-1. **Pull Ollama model** — `ollama pull qwen3.5:9b` (required for local inference)
-2. **Core Pydantic models** — `AgentSpec`, `AgentState`, `Message`, `Skill`, `Memory`, `Conversation`, `Deliverable`
-3. **Database layer** — SQLModel table definitions + engine setup
-4. **First feature spec** — run `/feature` for the Generator Agent onboarding interview
+1. **Database layer** — SQLModel table definitions + engine setup (`db/`)
+2. **First feature spec** — run `/feature` for the Generator Agent onboarding interview
 
 ---
 
