@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-20 | Branch: main | Milestone: v0.1 — MVP
+> Updated: 2026-05-20 | Branch: feat/generator-agent-interview | Milestone: v0.1 — MVP
 
 ---
 
@@ -11,7 +11,7 @@
 | Project scaffold | ✅ | ✅ | — |
 | Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | ✅ | ✅ |
 | Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
-| Generator Agent — interview | — | — | — |
+| Generator Agent — interview | ✅ | — | — |
 | Generator Agent — org generation | — | — | — |
 | LLM router | — | — | — |
 | LLM clients (Ollama, Anthropic, OpenAI, Google) | — | — | — |
@@ -58,14 +58,31 @@
 - ADR 0002 (séparation Pydantic/SQLModel), ADR 0003 (sessions async), ADR 0004 (BlockingQuestion) documentés
 - `feat/core-pydantic-models` mergé dans main, branche locale supprimée
 
-**Stopped at:** merge terminé — prêt pour la feature spec du Generator Agent
+**Stopped at:** merge complete — ready for Generator Agent feature spec
+
+---
+
+## Last session — 2026-05-20 (continued)
+
+- Feature spec written and validated: Generator Agent — interview
+  - `docs/specs/2026-05-20-generator-agent-interview.md` — full Feature Brief
+  - `docs/specs/2026-05-20-generator-agent-interview-roleplay.md` — annotated interview flow example
+    (reference for writing the interview prompt)
+- Key design decisions:
+  - Interview = structured (11 mandatory items) + conversational (adaptive order)
+  - End condition: `ready_to_generate: true` flag in the LLM JSON payload
+  - Feature 1 output: SQLite transcript + structured `BusinessContext` Pydantic model
+  - Skills: intent-level in Feature 1; details co-constructed per agent post-onboarding (dedicated future feature)
+  - LLM routing: driven by configured API keys — no forced provider order, Ollama valid for fully local setups
+
+**Stopped at:** Feature Brief validated — ready for implementation plan (Phase 2 of /feature)
 
 ---
 
 ## Next steps
 
-1. **First feature spec** — run `/feature` for the Generator Agent onboarding interview
-2. **Generator Agent** — interview flow implementation
+1. **Implementation plan** — Phase 2 of the `/feature` workflow for Generator Agent interview
+2. **TDD implementation** — `PromptLoader`, Anthropic client, minimal `LLMRouter`, interview flow, `BusinessContext`
 
 ---
 
