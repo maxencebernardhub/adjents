@@ -19,6 +19,7 @@ from adjents.db.tables import (
     AgentSpecTable,
     AgentStateTable,
     BlockingQuestionTable,
+    BusinessContextTable,
     ConversationTable,
     DeliverableTable,
     MemoryTable,
@@ -27,6 +28,7 @@ from adjents.db.tables import (
     SkillTable,
 )
 from adjents.deliverables.models import Deliverable
+from adjents.generator.models import BusinessContext
 from adjents.memory.models import Memory
 from adjents.messaging.models import Conversation, Message
 from adjents.projects.models import Project, ProjectStatus
@@ -277,4 +279,53 @@ def blocking_question_from_table(row: BlockingQuestionTable) -> BlockingQuestion
         answered_at=datetime.fromisoformat(row.answered_at)
         if row.answered_at is not None
         else None,
+    )
+
+
+# --- BusinessContext ---
+
+
+def business_context_to_table(bc: BusinessContext) -> BusinessContextTable:
+    return BusinessContextTable(
+        id=bc.id,
+        conversation_id=bc.conversation_id,
+        business_name=bc.business_name,
+        founder_name=bc.founder_name,
+        language=bc.language,
+        core_activity=bc.core_activity,
+        legal_status=bc.legal_status,
+        target_clients=json.dumps(bc.target_clients),
+        domains_with_human_coverage=json.dumps(bc.domains_with_human_coverage),
+        domains_to_staff=json.dumps(bc.domains_to_staff),
+        tasks_to_delegate=json.dumps(bc.tasks_to_delegate),
+        tasks_user_keeps=json.dumps(bc.tasks_user_keeps),
+        financial_goals=bc.financial_goals,
+        existing_tools=json.dumps(bc.existing_tools),
+        autonomy_preference=bc.autonomy_preference,
+        work_hours=bc.work_hours,
+        additional_context=bc.additional_context,
+        created_at=bc.created_at.isoformat(),
+    )
+
+
+def business_context_from_table(row: BusinessContextTable) -> BusinessContext:
+    return BusinessContext(
+        id=row.id,
+        conversation_id=row.conversation_id,
+        business_name=row.business_name,
+        founder_name=row.founder_name,
+        language=row.language,
+        core_activity=row.core_activity,
+        legal_status=row.legal_status,
+        target_clients=json.loads(row.target_clients),
+        domains_with_human_coverage=json.loads(row.domains_with_human_coverage),
+        domains_to_staff=json.loads(row.domains_to_staff),
+        tasks_to_delegate=json.loads(row.tasks_to_delegate),
+        tasks_user_keeps=json.loads(row.tasks_user_keeps),
+        financial_goals=row.financial_goals,
+        existing_tools=json.loads(row.existing_tools),
+        autonomy_preference=row.autonomy_preference,
+        work_hours=row.work_hours,
+        additional_context=row.additional_context,
+        created_at=datetime.fromisoformat(row.created_at),
     )

@@ -115,3 +115,26 @@ class BlockingQuestionTable(SQLModel, table=True):
     answer: str | None = Field(default=None)
     created_at: str  # ISO 8601
     answered_at: str | None = Field(default=None)  # ISO 8601
+
+
+class BusinessContextTable(SQLModel, table=True):
+    __tablename__ = "business_contexts"
+
+    id: str = Field(primary_key=True)
+    conversation_id: str
+    business_name: str | None = Field(default=None)
+    founder_name: str
+    language: str
+    core_activity: str
+    legal_status: str | None = Field(default=None)
+    target_clients: str = Field(default="[]")  # JSON: list[str]
+    domains_with_human_coverage: str = Field(default="[]")  # JSON: list[str]
+    domains_to_staff: str = Field(default="[]")  # JSON: list[str]
+    tasks_to_delegate: str = Field(default="[]")  # JSON: list[str]
+    tasks_user_keeps: str = Field(default="[]")  # JSON: list[str]
+    financial_goals: str | None = Field(default=None)
+    existing_tools: str = Field(default="[]")  # JSON: list[str]
+    autonomy_preference: str
+    work_hours: str | None = Field(default=None)
+    additional_context: str | None = Field(default=None)
+    created_at: str  # ISO 8601

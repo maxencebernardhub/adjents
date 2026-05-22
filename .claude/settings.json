@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/block_env_access.sh",
+            "command": "bash $(git -C . rev-parse --show-toplevel 2>/dev/null || echo .)/.claude/hooks/block_env_access.sh",
             "statusMessage": "Checking file access policy..."
           }
         ]

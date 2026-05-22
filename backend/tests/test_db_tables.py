@@ -7,6 +7,7 @@ from adjents.db.tables import (
     AgentSpecTable,
     AgentStateTable,
     BlockingQuestionTable,
+    BusinessContextTable,
     ConversationTable,
     DeliverableTable,
     MemoryTable,
@@ -317,11 +318,45 @@ async def test_blocking_question_table_answered(async_session: AsyncSession) -> 
     assert result.answered_at == "2026-05-20T09:30:00+00:00"
 
 
+# --- BusinessContextTable ---
+
+
+async def test_business_context_table_insert_read(async_session: AsyncSession) -> None:
+    row = BusinessContextTable(
+        id="bc-001",
+        conversation_id="conv-001",
+        business_name="Luminescence",
+        founder_name="Alex Chen",
+        language="fr",
+        core_activity="Freelance UX designer",
+        legal_status="Auto-entrepreneur",
+        target_clients='["Startups"]',
+        domains_with_human_coverage="[]",
+        domains_to_staff='["Finance", "Sales"]',
+        tasks_to_delegate='["Invoicing"]',
+        tasks_user_keeps='["UX design"]',
+        financial_goals="2000€/month",
+        existing_tools='["Gmail"]',
+        autonomy_preference="Validation required for external comms",
+        work_hours="18:00-23:00",
+        additional_context=None,
+        created_at="2026-05-20T00:00:00+00:00",
+    )
+    async_session.add(row)
+    await async_session.commit()
+
+    result = await async_session.get(BusinessContextTable, "bc-001")
+    assert result is not None
+    assert result.founder_name == "Alex Chen"
+    assert result.business_name == "Luminescence"
+    assert result.work_hours == "18:00-23:00"
+
+
 # --- Engine: all tables are created ---
 
 
 async def test_all_tables_exist(async_session: AsyncSession) -> None:
-    """Smoke test: all 9 tables are created without error."""
+    """Smoke test: all 10 tables are created without error."""
     from sqlalchemy import text
 
     result = await async_session.exec(
@@ -338,6 +373,7 @@ async def test_all_tables_exist(async_session: AsyncSession) -> None:
         "deliverables",
         "projects",
         "blocking_questions",
+        "business_contexts",
     }
     assert expected.issubset(table_names)
 

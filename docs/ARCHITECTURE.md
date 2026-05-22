@@ -28,6 +28,10 @@ adjents/
 │   │   ├── api/                 # FastAPI routes + WebSocket handlers
 │   │   ├── db/                  # SQLite models + migrations (via SQLModel)
 │   │   └── prompts/             # All prompts as .md files, loaded at runtime
+│   │       ├── agent/           # think_and_act, memory_summary
+│   │       ├── coo/             # daily_planning
+│   │       └── generator/       # interview, org_generation, extract_business_context
+│   ├── scripts/                 # Manual smoke tests (require API keys, not run by CI)
 │   ├── tests/
 │   ├── pyproject.toml
 │   └── README.md
