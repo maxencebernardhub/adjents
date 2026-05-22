@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-20 | Branch: feat/generator-agent-interview | Milestone: v0.1 — MVP
+> Updated: 2026-05-22 | Branch: feat/generator-agent-interview | Milestone: v0.1 — MVP
 
 ---
 
@@ -11,10 +11,10 @@
 | Project scaffold | ✅ | ✅ | — |
 | Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | ✅ | ✅ |
 | Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
-| Generator Agent — interview | ✅ | — | — |
+| Generator Agent — interview | ✅ | ✅ | ✅ |
 | Generator Agent — org generation | — | — | — |
-| LLM router | — | — | — |
-| LLM clients (Ollama, Anthropic, OpenAI, Google) | — | — | — |
+| LLM router | — | ✅ (Anthropic only) | ✅ |
+| LLM clients (Ollama, Anthropic, OpenAI, Google) | — | ✅ (Anthropic only) | ✅ |
 | Async message dispatcher | — | — | — |
 | Agent loop (asyncio, pause/resume, work hours) | — | — | — |
 | Memory layer (Chroma — per-agent + global KB) | — | — | — |
@@ -79,10 +79,38 @@
 
 ---
 
+## Last session — 2026-05-21
+
+- Implementation plan written and saved: `docs/specs/2026-05-20-generator-agent-interview-plan.md`
+- Full TDD implementation of Generator Agent — interview (T1–T7):
+  - `generator/models.py` — `BusinessContext` Pydantic model
+  - `db/tables.py` + `db/convert.py` — `BusinessContextTable` + convert functions
+  - `prompts/loader.py` — `PromptLoader` (.md files, YAML frontmatter, `{variable}` rendering)
+  - `llm/anthropic_client.py` — async `AnthropicClient` wrapper
+  - `router/router.py` — minimal `LLMRouter` (Anthropic-only, reads `ANTHROPIC_API_KEY`)
+  - `prompts/generator/interview.md` — real interview prompt (12 mandatory items, closing sequence)
+  - `prompts/generator/extract_business_context.md` — extraction prompt (transcript → BusinessContext JSON)
+  - `generator/interview.py` — `GeneratorInterview` orchestration (multi-turn, retry, persist, resume)
+  - `scripts/smoke_generator_interview.py` — end-to-end smoke test (real API, in-memory SQLite)
+- 128 tests passing, ruff + mypy --strict clean
+- Smoke test validated: `BusinessContext` correctly produced for Alex Chen / Luminescence scenario
+- Code review (subagent) identified 1 blocking + 4 warnings + 1 spec gap → all fixed:
+  - `ValidationError` from LLM extraction now wrapped in `InterviewError`
+  - `_completed` flag prevents duplicate `BusinessContext` on repeated `reply()` calls
+  - `LLMRouter` no longer stores the raw API key in memory
+  - Kickoff string moved from Python source to `interview.md` frontmatter
+  - `assert` guards replaced with explicit `InterviewError` raises
+  - `existing_tools` added as 12th mandatory item
+- 130 tests passing after fixes
+
+**Stopped at:** code review fixes committed — ready for merge to main
+
+---
+
 ## Next steps
 
-1. **Implementation plan** — Phase 2 of the `/feature` workflow for Generator Agent interview
-2. **TDD implementation** — `PromptLoader`, Anthropic client, minimal `LLMRouter`, interview flow, `BusinessContext`
+1. **Merge** `feat/generator-agent-interview` into `main`, delete local branch
+2. **Next feature** — Generator Agent — org generation: consume `BusinessContext` to generate `AgentSpec` hierarchy
 
 ---
 
@@ -90,7 +118,8 @@
 
 - `eslint.config.js`: written against ESLint 9 API — may need adjustments for ESLint 10 after `pnpm install`
 - `vite.config.ts`: written against Vite 6 API — to validate against installed Vite 8
-- All prompt files are placeholders (`<!-- TODO: implement -->`) — need real content before any LLM call
+- `resume()` in `GeneratorInterview`: N sequential SELECTs (one per message) — acceptable
+  for v0.1 short conversations, replace with `WHERE id IN (...)` if conversations grow
 
 ---
 
