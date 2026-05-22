@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-22 | Branch: feat/generator-agent-interview | Milestone: v0.1 — MVP
+> Updated: 2026-05-22 | Branch: feat/generator-org-generation | Milestone: v0.1 — MVP
 
 ---
 
@@ -12,7 +12,8 @@
 | Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | ✅ | ✅ |
 | Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
 | Generator Agent — interview | ✅ | ✅ | ✅ |
-| Generator Agent — org generation | — | — | — |
+| Generator Agent — org generation | ✅ | — | — |
+| Post-generation team validation (user ↔ N-1 agents) | — | — | — |
 | LLM router | — | ✅ (Anthropic only) | ✅ |
 | LLM clients (Ollama, Anthropic, OpenAI, Google) | — | ✅ (Anthropic only) | ✅ |
 | Async message dispatcher | — | — | — |
@@ -107,10 +108,34 @@
 
 ---
 
+## Last session — 2026-05-22
+
+- `feat/generator-agent-interview` merged into `main`, local branch deleted
+- Branch `feat/generator-org-generation` created
+- Full brainstorming + design for Generator Agent — org generation:
+  - Single LLM call (global coherence over per-domain generation)
+  - `visual_character` from predefined list injected into prompt
+  - `AgentState` created in `generate()` alongside `AgentSpec` (no orphan invariant)
+  - `prompts/agent/intro.md` deferred to post-generation validation feature
+  - Validation: structural invariants extracted as pure function + retry with LLM feedback
+- ADR 0005 created: org restructuring deferred to v0.2; Generator Agent orchestrates
+  with N-1/N-2 consultation; micro-adjustments via parent agent (v0.2); upsert-safe `generate()`
+- ADR 0006 created: post-generation team validation; agents start `is_paused=True`;
+  N-1 agents (not Generator Agent) conduct introduction conversations; skippable
+- `docs/VISION.md` updated: post-gen validation flow, restructuring flow, micro-adjustments,
+  updated roadmap and scope
+- `docs/ARCHITECTURE.md` updated: lifecycle diagram, AgentState invariant, visual_character
+  constraint, restructuring safety note
+- Feature Brief validated: `docs/specs/2026-05-22-generator-agent-org-generation.md`
+
+**Stopped at:** Feature Brief validated — ready for implementation plan (Phase 2 of /feature)
+
+---
+
 ## Next steps
 
-1. **Merge** `feat/generator-agent-interview` into `main`, delete local branch
-2. **Next feature** — Generator Agent — org generation: consume `BusinessContext` to generate `AgentSpec` hierarchy
+1. **Implementation plan** — Generator Agent — org generation (Phase 2 of /feature)
+2. **TDD implementation** — Phase 4 of /feature
 
 ---
 
@@ -140,3 +165,7 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-20 | Pydantic domain models ≠ SQLModel tables (ADR 0002) | Persistence concerns isolated in `db/`; FastAPI contract stays clean |
 | 2026-05-20 | Async SQLite sessions via aiosqlite (ADR 0003) | asyncio-first app; sync sessions would block the event loop |
 | 2026-05-20 | BlockingQuestion as first-class persisted entity (ADR 0004) | Schema complet dès le début; shape connue via le protocole WebSocket |
+| 2026-05-22 | Post-gen validation: agents start `is_paused=True`; N-1 agents (not Generator Agent) introduce themselves (ADR 0006) | Builds trust; N-1 has domain context; establishes operational relationship |
+| 2026-05-22 | Org restructuring deferred to v0.2 — Generator Agent orchestrates, consults N-1/N-2 (ADR 0005) | Memory preservation; agent domain knowledge improves proposals |
+| 2026-05-22 | Micro-adjustments via parent agent (v0.2) — N+1 owns team config for small changes (ADR 0005) | Distinct from restructuring; avoids Generator Agent overkill |
+| 2026-05-22 | Org generation: single LLM call (global coherence); `AgentState` created in `generate()`; `visual_character` from predefined list | Coherence over speed; no orphan invariant; PixiJS sprite safety |
