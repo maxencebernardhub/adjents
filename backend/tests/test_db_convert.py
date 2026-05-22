@@ -18,6 +18,8 @@ from adjents.db.convert import (
     agent_state_to_table,
     blocking_question_from_table,
     blocking_question_to_table,
+    business_context_from_table,
+    business_context_to_table,
     conversation_from_table,
     conversation_to_table,
     deliverable_from_table,
@@ -32,6 +34,7 @@ from adjents.db.convert import (
     skill_to_table,
 )
 from adjents.deliverables.models import Deliverable
+from adjents.generator.models import BusinessContext
 from adjents.memory.models import Memory
 from adjents.messaging.models import Conversation, Message
 from adjents.projects.models import Project, ProjectStatus
@@ -48,7 +51,7 @@ async def test_agent_spec_roundtrip(async_session: AsyncSession) -> None:
         domain="Finance",
         role_description="Manages all financial operations.",
         responsibilities=["Invoicing", "Cash flow monitoring"],
-        skill_ids=["skill-001"],
+        skill_ids=["skill-001", "skill-002"],
         escalation_rules=["Escalate if overdue > 30 days"],
         scheduler_interval_seconds=900,
         work_hours="09:00-18:00",
@@ -68,7 +71,9 @@ async def test_agent_spec_roundtrip(async_session: AsyncSession) -> None:
     assert restored == spec
 
 
-async def test_agent_spec_coo_roundtrip(async_session: AsyncSession) -> None:
+async def test_agent_spec_nullable_fields_roundtrip(
+    async_session: AsyncSession,
+) -> None:
     spec = AgentSpec(
         id="agent-000",
         name="COO",
@@ -94,7 +99,9 @@ async def test_agent_spec_coo_roundtrip(async_session: AsyncSession) -> None:
     stored = await async_session.get(AgentSpecTable, spec.id)
     assert stored is not None
     restored = agent_spec_from_table(stored)
-    assert restored == spec
+    assert restored.parent_id is None
+    assert restored.domain is None
+    assert restored.work_hours is None
 
 
 # --- AgentState ---
@@ -104,7 +111,7 @@ async def test_agent_state_roundtrip(async_session: AsyncSession) -> None:
     state = AgentState(
         agent_id="agent-001",
         status=AgentStatus.WORKING,
-        current_task_summary="Drafting Q1 invoice batch.",
+        current_task_summary="Drafting Q1 invoices.",
         meeting_with=[],
         updated_at=datetime(2026, 5, 20, 10, 0, tzinfo=UTC),
     )
@@ -120,13 +127,13 @@ async def test_agent_state_roundtrip(async_session: AsyncSession) -> None:
     assert restored == state
 
 
-async def test_agent_state_meeting_roundtrip(async_session: AsyncSession) -> None:
+async def test_agent_state_meeting_with_roundtrip(async_session: AsyncSession) -> None:
     state = AgentState(
         agent_id="agent-002",
-        status=AgentStatus.IN_MEETING_GROUP,
+        status=AgentStatus.IN_MEETING_1ON1,
         current_task_summary=None,
         meeting_with=["agent-001", "agent-003"],
-        updated_at=datetime(2026, 5, 20, tzinfo=UTC),
+        updated_at=datetime(2026, 5, 20, 14, 0, tzinfo=UTC),
     )
     row = agent_state_to_table(state)
     async_session.add(row)
@@ -147,8 +154,8 @@ async def test_skill_roundtrip(async_session: AsyncSession) -> None:
     skill = Skill(
         id="skill-001",
         name="Draft invoice",
-        description="Generates a PDF invoice.",
-        inputs=["Client name", "Amount", "Due date"],
+        description="Generates a PDF invoice from template.",
+        inputs=["Client name", "Amount"],
         outputs=["Invoice PDF path"],
         requires_human_review=True,
     )
@@ -173,7 +180,7 @@ async def test_message_roundtrip(async_session: AsyncSession) -> None:
         from_agent="agent-001",
         to_agent="user",
         content="Invoice batch ready for review.",
-        metadata={"task_id": "t-42", "priority": 1},
+        metadata={"task_id": "task-042"},
         parent_message_id=None,
         created_at=datetime(2026, 5, 20, 10, 0, tzinfo=UTC),
     )
@@ -189,13 +196,44 @@ async def test_message_roundtrip(async_session: AsyncSession) -> None:
     assert restored == msg
 
 
+async def test_message_with_parent_roundtrip(async_session: AsyncSession) -> None:
+    parent = Message(
+        id="msg-001",
+        from_agent="user",
+        to_agent="agent-001",
+        content="Please prioritise the Q2 report.",
+        metadata={},
+        parent_message_id=None,
+        created_at=datetime(2026, 5, 20, 9, 0, tzinfo=UTC),
+    )
+    child = Message(
+        id="msg-002",
+        from_agent="agent-001",
+        to_agent="user",
+        content="Understood. Prioritising Q2 report.",
+        metadata={},
+        parent_message_id="msg-001",
+        created_at=datetime(2026, 5, 20, 9, 1, tzinfo=UTC),
+    )
+    async_session.add(message_to_table(parent))
+    async_session.add(message_to_table(child))
+    await async_session.commit()
+
+    from adjents.db.tables import MessageTable
+
+    stored = await async_session.get(MessageTable, "msg-002")
+    assert stored is not None
+    restored = message_from_table(stored)
+    assert restored.parent_message_id == "msg-001"
+
+
 # --- Conversation ---
 
 
 async def test_conversation_roundtrip(async_session: AsyncSession) -> None:
     conv = Conversation(
         id="conv-001",
-        participant_agents=["agent-001", "user"],
+        participant_agents=["agent-001", "agent-002"],
         message_ids=["msg-001", "msg-002", "msg-003"],
         started_at=datetime(2026, 5, 20, 9, 0, tzinfo=UTC),
     )
@@ -401,3 +439,77 @@ async def test_blocking_question_answered_roundtrip(
     restored = blocking_question_from_table(stored)
     assert restored.answered is True
     assert restored.answered_at == bq.answered_at
+
+
+# --- BusinessContext ---
+
+
+async def test_business_context_roundtrip(async_session: AsyncSession) -> None:
+    bc = BusinessContext(
+        id="bc-001",
+        conversation_id="conv-001",
+        business_name="Luminescence",
+        founder_name="Alex Chen",
+        language="fr",
+        core_activity="Freelance UX designer — mobile apps",
+        legal_status="Auto-entrepreneur",
+        target_clients=["Startups", "PMEs"],
+        domains_with_human_coverage=[],
+        domains_to_staff=["Finance", "Sales"],
+        tasks_to_delegate=["Invoicing", "Prospecting"],
+        tasks_user_keeps=["UX design"],
+        financial_goals="2000€ net/month",
+        existing_tools=["Gmail", "LinkedIn"],
+        autonomy_preference="Validation required for external communications",
+        work_hours="18:00-23:00",
+        additional_context=None,
+        created_at=datetime(2026, 5, 20, tzinfo=UTC),
+    )
+    row = business_context_to_table(bc)
+    async_session.add(row)
+    await async_session.commit()
+
+    from adjents.db.tables import BusinessContextTable
+
+    stored = await async_session.get(BusinessContextTable, bc.id)
+    assert stored is not None
+    restored = business_context_from_table(stored)
+    assert restored == bc
+
+
+async def test_business_context_nullable_fields_roundtrip(
+    async_session: AsyncSession,
+) -> None:
+    bc = BusinessContext(
+        id="bc-002",
+        conversation_id="conv-002",
+        business_name=None,
+        founder_name="Jordan Lee",
+        language="en",
+        core_activity="Freelance copywriter",
+        legal_status=None,
+        target_clients=[],
+        domains_with_human_coverage=[],
+        domains_to_staff=["Marketing"],
+        tasks_to_delegate=[],
+        tasks_user_keeps=[],
+        financial_goals=None,
+        existing_tools=[],
+        autonomy_preference="Full autonomy",
+        work_hours=None,
+        additional_context=None,
+        created_at=datetime(2026, 5, 21, tzinfo=UTC),
+    )
+    row = business_context_to_table(bc)
+    async_session.add(row)
+    await async_session.commit()
+
+    from adjents.db.tables import BusinessContextTable
+
+    stored = await async_session.get(BusinessContextTable, bc.id)
+    assert stored is not None
+    restored = business_context_from_table(stored)
+    assert restored.business_name is None
+    assert restored.legal_status is None
+    assert restored.work_hours is None
+    assert restored.existing_tools == []

@@ -23,3 +23,13 @@ uv run pytest
 uv run ruff check . && uv run ruff format --check .
 uv run mypy --strict adjents/
 ```
+
+## Scripts
+
+One-off scripts to validate features against real APIs. Not run by pytest —
+require API keys and are excluded from CI.
+
+```bash
+# Smoke test: Generator Agent interview (requires ANTHROPIC_API_KEY)
+uv run python scripts/smoke_generator_interview.py
+```

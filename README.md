@@ -78,27 +78,38 @@ Then open [http://localhost:5173](http://localhost:5173).
 
 ```text
 adjents/
-├── backend/adjents/
-│   ├── agents/        # AgentSpec, lifecycle, autonomous loop
-│   ├── generator/     # Generator Agent: interview + org generation
-│   ├── messaging/     # Async typed message bus
-│   ├── memory/        # Per-agent Chroma store + global knowledge base
-│   ├── router/        # LLM routing (local vs cloud)
-│   ├── llm/           # LLM client abstractions
-│   ├── scheduler/     # asyncio task runner + pause/resume
-│   ├── api/           # FastAPI routes + WebSocket handlers
-│   ├── db/            # SQLite models (SQLModel)
-│   └── prompts/       # All prompts as .md files
-├── frontend/src/
-│   ├── workspace/     # PixiJS 2D house + agent sprites
-│   ├── components/    # Shared React components
-│   ├── views/         # Onboarding, Workspace, OrgChart, Deliverables
-│   └── state/         # Zustand stores
-├── data/outputs/      # Agent-produced deliverables
-└── docs/
-    ├── VISION.md      # Full product vision and MVP scope
-    ├── ARCHITECTURE.md
-    └── decisions/     # Architecture Decision Records (ADRs)
+├── backend/
+│   ├── adjents/
+│   │   ├── agents/        # AgentSpec, lifecycle, autonomous loop
+│   │   ├── api/           # FastAPI routes + WebSocket handlers
+│   │   ├── db/            # SQLite persistence (SQLModel + aiosqlite)
+│   │   ├── deliverables/  # Deliverable writing and storage
+│   │   ├── generator/     # Generator Agent: interview + org generation
+│   │   ├── llm/           # LLM client abstractions
+│   │   ├── memory/        # Per-agent Chroma store + global knowledge base
+│   │   ├── messaging/     # Async typed message bus
+│   │   ├── projects/      # Project and task management (v0.2)
+│   │   ├── prompts/       # All prompts as .md files (agent/, coo/, generator/)
+│   │   ├── router/        # LLM routing (local vs cloud)
+│   │   └── scheduler/     # asyncio task runner + pause/resume
+│   ├── scripts/           # Manual smoke tests (require API keys, not run by CI)
+│   └── tests/             # pytest test suite
+├── frontend/
+│   ├── src/
+│   │   ├── api/           # REST + WebSocket client
+│   │   ├── components/    # Shared React components
+│   │   ├── state/         # Zustand stores
+│   │   ├── views/         # Onboarding, Workspace, OrgChart, Deliverables
+│   │   └── workspace/     # PixiJS 2D house + agent sprites
+│   └── tests/             # Vitest test suite
+├── data/outputs/          # Agent-produced deliverables
+├── docs/
+│   ├── decisions/         # Architecture Decision Records (ADRs)
+│   ├── specs/             # Feature specs and implementation plans
+│   ├── ARCHITECTURE.md
+│   └── VISION.md          # Full product vision and MVP scope
+└── .github/
+    └── workflows/         # CI/CD pipelines
 ```
 
 ---
