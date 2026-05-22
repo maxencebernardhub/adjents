@@ -16,13 +16,15 @@ class LLMConfigError(Exception): ...
 
 class LLMRouter:
     def __init__(self, anthropic_api_key: str | None = None) -> None:
-        self._key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not self._key:
+        key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+        if not key:
             raise LLMConfigError(
                 "No LLM provider configured. "
                 "Set ANTHROPIC_API_KEY in .env to use the Generator Agent."
             )
+        self._client: AnthropicClient = AnthropicClient(
+            api_key=key, model=_GENERATOR_MODEL
+        )
 
     def get_generator_client(self) -> AnthropicClient:
-        assert self._key  # guaranteed by __init__
-        return AnthropicClient(api_key=self._key, model=_GENERATOR_MODEL)
+        return self._client

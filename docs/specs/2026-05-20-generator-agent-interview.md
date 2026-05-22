@@ -33,10 +33,10 @@ summary that Feature 2 (org generation) will consume.
   ambiguous (e.g. "Hi", a single name)
 - Each Generator Agent response includes a structured payload:
   `{"message": "...", "ready_to_generate": false, "missing_mandatory_info": [...]}`
-- The Generator Agent collects the 11 mandatory items conversationally (not as a linear
+- The Generator Agent collects the 12 mandatory items conversationally (not as a linear
   questionnaire). The LLM adapts question order and follow-ups based on prior answers;
   information volunteered spontaneously is captured without re-asking
-- The 11 mandatory items are:
+- The 12 mandatory items are:
   1. Identity / commercial name (may be `None` for sole proprietors using their personal name)
   2. Core activity and context
   3. What the user wants to delegate vs. keep for themselves (determines agent domains)
@@ -47,7 +47,8 @@ summary that Feature 2 (org generation) will consume.
   8. High-level task intentions per emerging domain (skill-level intent, not implementation)
   9. Autonomy / validation preferences (what requires human review before acting)
   10. Availability / work hours
-  11. Open-ended closing sequence (3 successive questions before confirming readiness):
+  11. Existing tools, apps, and services the user already uses
+  12. Open-ended closing sequence (3 successive questions before confirming readiness):
       "Anything else you'd like to mention?",
       "Any domains or tasks we haven't covered that you'd like to delegate?",
       "Ready to build your team?"

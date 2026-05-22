@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -25,7 +26,6 @@ from adjents.prompts.loader import PromptLoader
 
 _GENERATOR_ID = "generator"
 _MAX_RETRIES = 3
-_KICKOFF = "Hello."
 
 
 @dataclass
@@ -50,10 +50,14 @@ class GeneratorInterview:
         self._session = session
         self._conversation: Conversation | None = None
         self._messages: list[Message] = []
+        self._completed: bool = False
 
     async def start(self) -> str:
-        system = self._loader.get("generator/interview").content
-        raw = await self._call_llm(system, [{"role": "user", "content": _KICKOFF}])
+        prompt = self._loader.get("generator/interview")
+        kickoff = str(prompt.frontmatter.get("kickoff_message", "Hello."))
+        raw = await self._call_llm(
+            prompt.content, [{"role": "user", "content": kickoff}]
+        )
         response = self._parse_response(raw)
 
         self._conversation = Conversation(
@@ -62,9 +66,9 @@ class GeneratorInterview:
             message_ids=[],
             started_at=datetime.now(UTC),
         )
-        kickoff = self._make_message("user", _GENERATOR_ID, _KICKOFF)
+        kickoff_msg = self._make_message("user", _GENERATOR_ID, kickoff)
         agent = self._make_message(_GENERATOR_ID, "user", raw)
-        await self._persist_messages([kickoff, agent])
+        await self._persist_messages([kickoff_msg, agent])
         return response.message
 
     async def reply(self, user_message: str) -> InterviewResponse:
@@ -81,7 +85,8 @@ class GeneratorInterview:
         agent_msg = self._make_message(_GENERATOR_ID, "user", raw)
         await self._persist_messages([agent_msg])
 
-        if response.ready_to_generate:
+        if response.ready_to_generate and not self._completed:
+            self._completed = True
             bc = await self._build_business_context()
             self._session.add(business_context_to_table(bc))
             await self._session.commit()
@@ -160,7 +165,8 @@ class GeneratorInterview:
         )
 
     async def _persist_messages(self, messages: list[Message]) -> None:
-        assert self._conversation is not None
+        if self._conversation is None:
+            raise InterviewError("Interview not started. Call start() first.")
         new_ids = list(self._conversation.message_ids)
         for msg in messages:
             self._messages.append(msg)
@@ -186,7 +192,8 @@ class GeneratorInterview:
         await self._session.commit()
 
     async def _build_business_context(self) -> BusinessContext:
-        assert self._conversation is not None
+        if self._conversation is None:
+            raise InterviewError("Interview not started. Call start() first.")
         system = self._loader.get("generator/extract_business_context").content
         transcript = self._build_transcript()
         raw = await self._client.complete(
@@ -201,12 +208,18 @@ class GeneratorInterview:
         data.pop("id", None)
         data.pop("conversation_id", None)
         data.pop("created_at", None)
-        return BusinessContext(
-            id=str(uuid.uuid4()),
-            conversation_id=self._conversation.id,
-            created_at=datetime.now(UTC),
-            **data,
-        )
+        try:
+            bc = BusinessContext(
+                id=str(uuid.uuid4()),
+                conversation_id=self._conversation.id,
+                created_at=datetime.now(UTC),
+                **data,
+            )
+        except ValidationError as exc:
+            raise InterviewError(
+                f"BusinessContext extraction failed: invalid fields — {exc}"
+            ) from exc
+        return bc
 
     def _build_transcript(self) -> str:
         parts: list[str] = []

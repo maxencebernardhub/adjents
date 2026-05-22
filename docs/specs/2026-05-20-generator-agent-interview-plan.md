@@ -6,7 +6,7 @@
 ## Context
 
 The Generator Agent is the entry point for every new Adjents user. It conducts a
-multi-turn onboarding interview to collect the 11 mandatory items needed to generate a
+multi-turn onboarding interview to collect the 12 mandatory items needed to generate a
 full AI team (`BusinessContext`). This feature also builds all shared infrastructure
 (PromptLoader, AnthropicClient, LLMRouter) that the rest of v0.1 depends on.
 Nothing else in v0.1 can start until this feature is complete.
@@ -224,7 +224,7 @@ class LLMRouter:
 
 - Response format for every turn:
   `{"message": "...", "ready_to_generate": false, "missing_mandatory_info": [...]}`
-- Lists the 11 mandatory items to collect
+- Lists the 12 mandatory items to collect
 - Conversational rules: adaptive order, no re-asking, capture volunteered info
 - Language detection from the first user message (default English on ambiguous input)
 - 3-question closing sequence before setting `ready_to_generate: true`

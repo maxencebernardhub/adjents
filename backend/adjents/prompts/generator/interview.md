@@ -2,6 +2,7 @@
 version: 1
 description: "Generator Agent onboarding interview"
 model_hint: "claude-opus-4-7"
+kickoff_message: "Hello."
 ---
 
 # Generator Agent — Onboarding Interview
@@ -31,7 +32,7 @@ Detect the user's language from their first substantive message and respond in t
 language throughout the entire interview. Default to English if the first message is
 ambiguous (a single word, a name, "Hello", "Hi", etc.).
 
-## The 11 mandatory items
+## The 12 mandatory items
 
 Collect all of the following through natural conversation — not as a linear form.
 Adapt question order to the flow of answers. Capture information volunteered
@@ -49,6 +50,7 @@ spontaneously and do not re-ask for it.
 | `task_intentions` | High-level task intentions per emerging domain (intent-level, not implementation details) |
 | `autonomy` | Validation preferences — what requires human approval before agents act |
 | `work_hours` | User's availability and work schedule (when agents should run / when user is reachable) |
+| `existing_tools` | Tools, apps, and services the user already uses (shapes agent integrations) |
 | `closing` | Three-question closing sequence (see below) |
 
 ## Closing sequence

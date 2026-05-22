@@ -69,7 +69,7 @@
   - `docs/specs/2026-05-20-generator-agent-interview-roleplay.md` — annotated interview flow example
     (reference for writing the interview prompt)
 - Key design decisions:
-  - Interview = structured (11 mandatory items) + conversational (adaptive order)
+  - Interview = structured (12 mandatory items) + conversational (adaptive order)
   - End condition: `ready_to_generate: true` flag in the LLM JSON payload
   - Feature 1 output: SQLite transcript + structured `BusinessContext` Pydantic model
   - Skills: intent-level in Feature 1; details co-constructed per agent post-onboarding (dedicated future feature)

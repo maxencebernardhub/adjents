@@ -244,3 +244,43 @@ async def test_retry_all_failed_raises_interview_error(
     iv = GeneratorInterview(mock_client, loader, async_session)
     with pytest.raises(InterviewError, match="valid JSON"):
         await iv.start()
+
+
+# --- Error handling ---
+
+
+async def test_build_business_context_invalid_fields_raises_interview_error(
+    mock_client: MagicMock,
+    loader: PromptLoader,
+    async_session: AsyncSession,
+) -> None:
+    bad_extract = json.dumps({"business_name": "Acme"})
+    mock_client.complete = AsyncMock(
+        side_effect=[_AGENT_RESPONSE, _DONE_RESPONSE, bad_extract]
+    )
+    iv = GeneratorInterview(mock_client, loader, async_session)
+    await iv.start()
+    with pytest.raises(InterviewError, match="BusinessContext extraction failed"):
+        await iv.reply("I am ready.")
+
+
+async def test_reply_after_completed_does_not_create_duplicate_business_context(
+    mock_client: MagicMock,
+    loader: PromptLoader,
+    async_session: AsyncSession,
+) -> None:
+    mock_client.complete = AsyncMock(
+        side_effect=[
+            _AGENT_RESPONSE,
+            _DONE_RESPONSE,
+            _EXTRACT_RESPONSE,
+            _DONE_RESPONSE,
+            _EXTRACT_RESPONSE,
+        ]
+    )
+    iv = GeneratorInterview(mock_client, loader, async_session)
+    await iv.start()
+    await iv.reply("Ready.")
+    await iv.reply("Still ready.")
+    rows = (await async_session.exec(select(BusinessContextTable))).all()
+    assert len(rows) == 1
