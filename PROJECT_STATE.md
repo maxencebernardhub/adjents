@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-22 | Branch: feat/generator-org-generation | Milestone: v0.1 — MVP
+> Updated: 2026-05-25 | Branch: feat/generator-org-generation | Milestone: v0.1 — MVP
 
 ---
 
@@ -132,10 +132,35 @@
 
 ---
 
+## Last session — 2026-05-25
+
+- Implementation plan written, reviewed, and finalised:
+  `docs/specs/2026-05-25-generator-agent-org-generation-plan.md`
+- Plan covers 4 tasks (T1 → T4) with full TDD detail:
+  - T1 — `RawAgentData`, `OrgGenerationResult`, `OrgGenerationError`, `_validate_structure`
+    (8 validation rules, 16 unit tests)
+  - T2 — `prompts/generator/org_generation.md` (full prompt: JSON schema, org design
+    rules, visual character list, scheduler guidance)
+  - T3 — `GeneratorOrgGeneration` class + helpers (`_build_context_message`,
+    `_parse_raw_agents`, `_resolve_and_build`, `_persist`) + 15 integration tests
+  - T4 — `scripts/smoke_generator_org.py` (Sophie Dubois persona, ≥ 10 N-1,
+    ≥ 15 N-2, ≥ 40 skills)
+- Key design decisions documented in the plan:
+  - `prompt.content` used instead of `prompt.render()` to avoid `str.format_map()`
+    breakage on user-supplied curly braces; prompt still lives in the `.md` file
+  - `work_hours` current format (`"HH:MM-HH:MM"`) is a known v0.1 simplification:
+    per-agent schedules ✅ supported; day-of-week granularity → v0.2
+  - Validation rule added for `scheduler_interval_seconds` range (300–3600)
+  - Edge case documented: `level=0` with non-null `parent_temp_id` is an explicit
+    validation failure (separate from the "exactly one COO" rule)
+
+**Stopped at:** implementation plan finalised — ready for TDD implementation (Phase 4)
+
+---
+
 ## Next steps
 
-1. **Implementation plan** — Generator Agent — org generation (Phase 2 of /feature)
-2. **TDD implementation** — Phase 4 of /feature
+1. **TDD implementation** — Generator Agent — org generation (Phase 4 of /feature)
 
 ---
 
@@ -145,6 +170,10 @@
 - `vite.config.ts`: written against Vite 6 API — to validate against installed Vite 8
 - `resume()` in `GeneratorInterview`: N sequential SELECTs (one per message) — acceptable
   for v0.1 short conversations, replace with `WHERE id IN (...)` if conversations grow
+- `work_hours` in `AgentSpec`: single daily window (`"HH:MM-HH:MM"`) applied uniformly
+  every day — no day-of-week granularity, no multi-window support; per-agent independent
+  schedules ARE supported (each `AgentSpec` has its own field); day-of-week variation
+  (e.g. "Tue nights OK, Thu nights not") is a v0.2 enhancement
 
 ---
 
