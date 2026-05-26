@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-25 | Branch: feat/generator-org-generation | Milestone: v0.1 — MVP
+> Updated: 2026-05-25 (session 3) | Branch: feat/generator-org-generation | Milestone: v0.1 — MVP
 
 ---
 
@@ -12,7 +12,7 @@
 | Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | ✅ | ✅ |
 | Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
 | Generator Agent — interview | ✅ | ✅ | ✅ |
-| Generator Agent — org generation | ✅ | — | — |
+| Generator Agent — org generation | ✅ | ✅ | ✅ |
 | Post-generation team validation (user ↔ N-1 agents) | — | — | — |
 | LLM router | — | ✅ (Anthropic only) | ✅ |
 | LLM clients (Ollama, Anthropic, OpenAI, Google) | — | ✅ (Anthropic only) | ✅ |
@@ -158,9 +158,97 @@
 
 ---
 
+## Last session — 2026-05-25 (continued)
+
+- Full TDD implementation of Generator Agent — org generation (T1 → T4):
+  - T1 — `generator/org_generation.py`: `VALID_VISUAL_CHARACTERS`, `RawAgentData`,
+    `OrgGenerationResult`, `OrgGenerationError`, `_validate_structure` (8 rules)
+    → 16 unit tests, all pure (no DB, no LLM)
+  - T2 — `prompts/generator/org_generation.md`: full prompt written (JSON schema,
+    field rules, visual character list, org design rules)
+  - T3 — `generator/org_generation.py` extended with `_build_context_message`,
+    `_parse_raw_agents`, `_resolve_and_build`, `GeneratorOrgGeneration` class
+    (generate + _call_llm retry loop + _persist)
+    → 15 integration tests with mocked `AnthropicClient` and in-memory SQLite
+  - T4 — `scripts/smoke_generator_org.py`: Sophie Dubois Creations persona,
+    verifies ≥ 10 N-1, ≥ 15 N-2, ≥ 40 skills, all states paused
+- 161 tests passing (130 existing + 31 new), ruff + mypy --strict clean
+- Design decision: file kept at ~350 lines (docstrings + comments preserved);
+  the 300-line guideline is a soft constraint — coherence > arbitrary split
+
+**Stopped at:** TDD complete — ready for smoke test (requires real ANTHROPIC_API_KEY),
+then code review + merge to main
+
+---
+
+## Last session — 2026-05-25 (session 3)
+
+Smoke test debugging, architecture decisions, and smoke script enrichment for
+Generator Agent — org generation.
+
+### `AnthropicClient` rewritten to stream unconditionally (ADR 0007)
+
+The Anthropic SDK raises `ValueError` for `messages.create()` with
+`max_tokens > 8192` on Opus 4+ models (`MODEL_NONSTREAMING_TOKENS` threshold).
+`GeneratorOrgGeneration` requires `_MAX_TOKENS = 32000` → first smoke run crashed.
+
+Fix: `AnthropicClient.complete()` now always uses `messages.stream()` +
+`get_final_text()`. Caller API unchanged. `tests/test_llm_anthropic.py`
+rewritten with `_FakeStream` async context manager helper.
+
+### Prompt design decisions (org_generation.md)
+
+After analysis of multiple smoke runs, three prompt rules were revised through
+discussion:
+
+- **Rule #2 (domain merging)**: one N-1 per listed domain; if two domains truly
+  overlap, the LLM may create one N-1 with a merged scope — not a hard ban.
+- **Rule #3 (N-2 agents)**: N-2s created when the context shows ≥ 2 distinct task
+  clusters; N-1 leaf nodes are explicitly valid. No fixed min or max. N-1 interviews
+  will refine the org post-generation (consistent with ADR 0006).
+- **Skills**: removed the arbitrary 1–5 cap. "At least 1 skill per agent, as many
+  as needed to cover responsibilities; quality over quantity."
+
+### Smoke script enrichment (smoke_generator_org.py)
+
+- **Domains**: disambiguated overlapping entries — `"Content & Social Media"` +
+  `"Social Media"` → `"Content Creation & Publishing"` + `"Social Media Management"`
+- **Tasks**: split bundled entries into distinct sub-tasks per domain (B2B Sales,
+  Content, Social Media, Customer Service, Finance) to give the LLM clear signals
+  for N-2 creation
+- **Thresholds revised**:
+  - N-1: `≥ len(domains) - 1` (±1 tolerance for legitimate merges)
+  - N-2: check removed — N-1 leaf nodes valid; count displayed as informational
+  - Skills: proportional `≥ floor(1.5 × total_agents)` (robust to org size variance)
+
+### `on_agent_ready` progress callback added to `generate()`
+
+`GeneratorOrgGeneration.generate()` accepts an optional
+`on_agent_ready: Callable[[str, int], None] | None = None` parameter, forwarded
+to `_resolve_and_build()`. Called with `(name, level)` after each `AgentSpec` is
+built. Used by `smoke_generator_org.py` to print live progress; designed for future
+WebSocket streaming of org generation progress to the frontend.
+
+### `_print_agent_details` added to smoke script
+
+After the org tree summary, the smoke script now prints a detailed card per agent:
+role, schedule (interval + work hours), responsibilities, skills (inputs/outputs/
+review flag), and escalation rules. Sorted by level then name.
+
+### Final state
+
+- 31 tests passing (unchanged), ruff + mypy --strict clean
+- Smoke test passes reliably: 10 N-1 agents, proportional skills, all states paused
+- ADR 0007 created, ARCHITECTURE.md §2 updated, backend/README.md Scripts updated
+
+**Stopped at:** smoke test validated manually — ready for code review + merge to main
+
+---
+
 ## Next steps
 
-1. **TDD implementation** — Generator Agent — org generation (Phase 4 of /feature)
+1. **Code review + merge** — `feat/generator-org-generation` → `main`
+2. **Next feature** — Post-generation team validation (user ↔ N-1 agents)
 
 ---
 
@@ -198,3 +286,6 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-22 | Org restructuring deferred to v0.2 — Generator Agent orchestrates, consults N-1/N-2 (ADR 0005) | Memory preservation; agent domain knowledge improves proposals |
 | 2026-05-22 | Micro-adjustments via parent agent (v0.2) — N+1 owns team config for small changes (ADR 0005) | Distinct from restructuring; avoids Generator Agent overkill |
 | 2026-05-22 | Org generation: single LLM call (global coherence); `AgentState` created in `generate()`; `visual_character` from predefined list | Coherence over speed; no orphan invariant; PixiJS sprite safety |
+| 2026-05-25 | `AnthropicClient` streams unconditionally via `messages.stream()` (ADR 0007) | SDK raises `ValueError` for `messages.create()` with `max_tokens > 8192` on Opus 4+ |
+| 2026-05-25 | N-1 leaf nodes valid; N-2 count driven by context, not enforced; skills no upper cap | Initial org is a first draft — N-1 interviews refine scope and spawn specialists (ADR 0006) |
+| 2026-05-25 | `generate()` accepts optional `on_agent_ready` callback for progress reporting | Pattern for future WebSocket streaming of org generation progress to the frontend |

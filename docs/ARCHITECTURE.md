@@ -95,6 +95,15 @@ libraries for specific sub-problems.
 | SQLite ORM | `sqlmodel` | Pydantic + SQLAlchemy, matches our stack |
 | Async SQLite driver | `aiosqlite` | Non-blocking SQLite access in asyncio coroutines (see ADR 0003) |
 
+**`AnthropicClient` — streaming unconditionally**: `AnthropicClient.complete()`
+always uses `messages.stream()` + `get_final_text()`, regardless of `max_tokens`.
+The Anthropic SDK enforces a non-streaming token ceiling for Opus 4+ models (8192
+tokens via `MODEL_NONSTREAMING_TOKENS`); any `messages.create()` call exceeding
+that limit raises a `ValueError` before the request is sent. `GeneratorOrgGeneration`
+requires `_MAX_TOKENS = 32000` for complex org JSONs (10+ domains). Streaming
+unconditionally removes this ceiling, keeps the `complete()` signature unchanged,
+and future-proofs the client against SDK threshold changes. See ADR 0007.
+
 The agent loop, message bus, router, and scheduler are written from scratch. Each
 module is 100–300 lines. We keep full control and avoid dependency lock-in.
 

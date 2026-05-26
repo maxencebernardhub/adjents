@@ -32,4 +32,7 @@ require API keys and are excluded from CI.
 ```bash
 # Smoke test: Generator Agent interview (requires ANTHROPIC_API_KEY)
 uv run python scripts/smoke_generator_interview.py
+
+# Smoke test: Generator Agent org generation (requires ANTHROPIC_API_KEY)
+uv run python scripts/smoke_generator_org.py
 ```
