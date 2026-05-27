@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-25 (session 3) | Branch: feat/generator-org-generation | Milestone: v0.1 — MVP
+> Updated: 2026-05-27 | Branch: main | Milestone: v0.1 — MVP
 
 ---
 
@@ -245,10 +245,27 @@ review flag), and escalation rules. Sorted by level then name.
 
 ---
 
+## Last session — 2026-05-27
+
+Code review of `feat/generator-org-generation` + two fixes applied:
+
+- **Point 1** (`generator/org_generation.py` — `_parse_raw_agents`): `parent_temp_id`
+  now explicitly cast via `str(raw_parent) if raw_parent is not None else None`,
+  consistent with the `temp_id` field treatment. Guards against malformed LLM output
+  (e.g. integer instead of string).
+- **Point 2** (`generator/org_generation.py` — `_call_llm`): comment added above
+  `messages` initialisation documenting the progressive-context retry strategy and
+  the maximum history size (1 + 2×_MAX_RETRIES = 7 messages).
+- 31 tests passing, ruff + mypy --strict clean after fixes.
+- `feat/generator-org-generation` merged into `main`, local branch deleted.
+
+**Stopped at:** merge complete — ready for next feature
+
+---
+
 ## Next steps
 
-1. **Code review + merge** — `feat/generator-org-generation` → `main`
-2. **Next feature** — Post-generation team validation (user ↔ N-1 agents)
+1. **Next feature** — Post-generation team validation (user ↔ N-1 agents)
 
 ---
 

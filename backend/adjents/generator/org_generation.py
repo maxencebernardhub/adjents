@@ -226,12 +226,13 @@ def _parse_raw_agents(data: dict[str, Any]) -> list[RawAgentData]:
     for item in agents_raw:
         if not isinstance(item, dict):
             raise ValueError(f"Each agent must be a dict, got {type(item).__name__}.")
+        raw_parent = item.get("parent_temp_id")
         result.append(
             RawAgentData(
                 temp_id=str(item["temp_id"]),
                 name=str(item["name"]),
                 level=int(item["level"]),
-                parent_temp_id=item.get("parent_temp_id"),
+                parent_temp_id=str(raw_parent) if raw_parent is not None else None,
                 domain=item.get("domain"),
                 role_description=str(item["role_description"]),
                 responsibilities=list(item["responsibilities"]),
@@ -361,6 +362,10 @@ class GeneratorOrgGeneration:
         history before retrying (progressive context). After _MAX_RETRIES failures,
         raises OrgGenerationError with the last raw response for diagnostics.
         """
+        # The initial user message (business context) is set once and never repeated.
+        # Each failed attempt appends 2 messages (assistant + corrective feedback),
+        # so the history grows to at most 1 + 2*_MAX_RETRIES = 7 messages.
+        # This is intentional: progressive context helps the LLM self-correct.
         messages: list[dict[str, str]] = [{"role": "user", "content": context_msg}]
         last_raw = ""
         for _ in range(self._MAX_RETRIES):
