@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-27 | Branch: main | Milestone: v0.1 — MVP
+> Updated: 2026-05-27 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
 
 ---
 
@@ -13,7 +13,7 @@
 | Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
 | Generator Agent — interview | ✅ | ✅ | ✅ |
 | Generator Agent — org generation | ✅ | ✅ | ✅ |
-| Post-generation team validation (user ↔ N-1 agents) | — | — | — |
+| Post-generation team setup (user ↔ agents) | ✅ | — | — |
 | LLM router | — | ✅ (Anthropic only) | ✅ |
 | LLM clients (Ollama, Anthropic, OpenAI, Google) | — | ✅ (Anthropic only) | ✅ |
 | Async message dispatcher | — | — | — |
@@ -116,11 +116,11 @@
   - Single LLM call (global coherence over per-domain generation)
   - `visual_character` from predefined list injected into prompt
   - `AgentState` created in `generate()` alongside `AgentSpec` (no orphan invariant)
-  - `prompts/agent/intro.md` deferred to post-generation validation feature
+  - `prompts/agent/intro.md` deferred to post-generation team setup feature
   - Validation: structural invariants extracted as pure function + retry with LLM feedback
 - ADR 0005 created: org restructuring deferred to v0.2; Generator Agent orchestrates
   with N-1/N-2 consultation; micro-adjustments via parent agent (v0.2); upsert-safe `generate()`
-- ADR 0006 created: post-generation team validation; agents start `is_paused=True`;
+- ADR 0006 created: post-generation team setup; agents start `is_paused=True`;
   N-1 agents (not Generator Agent) conduct introduction conversations; skippable
 - `docs/VISION.md` updated: post-gen validation flow, restructuring flow, micro-adjustments,
   updated roadmap and scope
@@ -263,9 +263,36 @@ Code review of `feat/generator-org-generation` + two fixes applied:
 
 ---
 
+## Last session — 2026-05-27 (continued)
+
+Feature Brief written and validated for Post-generation team setup (user ↔ agents).
+
+### Key design decisions
+
+- **Two modes**: `TeamSetupOrchestrator` (sequential, all N-1s, depth-first) +
+  `AgentReconfiguration` (any agent, any time, both in v0.1)
+- **Conversation + extraction pattern** (ADR 0008): natural language turns, no per-turn JSON;
+  single LLM extraction call at validation time
+- **Direct reconfiguration in v0.1** (ADR 0009): all non-structural fields modifiable directly;
+  `work_hours`, `responsibilities`, `role_description` get parent-mediated governance in v0.2
+- **Depth-first traversal** + `navigation_stack` (`list[str]`): enables resume at any depth
+  (N-2, N-3, etc.) after interruption
+- **Frozen fields**: `domain`, `level`, `parent_id` (restructuring deferred to v0.2)
+- **New models**: `ValidationSession`, `AgentValidationRecord` (Pydantic + SQLModel tables)
+- **AgentState.status**: `PAUSED → IN_MEETING_1ON1` during conversation; `→ IDLE` at go-live
+- **LLM**: `claude-sonnet-4-6` for conversations and extraction (to revisit after LLM Router feature)
+
+### Artefacts
+
+- `docs/specs/2026-05-27-post-generation-team-setup.md` — Feature Brief
+
+**Stopped at:** Feature Brief validated — ready for implementation plan (Phase 2 of /feature)
+
+---
+
 ## Next steps
 
-1. **Next feature** — Post-generation team validation (user ↔ N-1 agents)
+1. **Phase 2** — Post-generation team setup: implementation plan
 
 ---
 
@@ -299,10 +326,12 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-20 | Pydantic domain models ≠ SQLModel tables (ADR 0002) | Persistence concerns isolated in `db/`; FastAPI contract stays clean |
 | 2026-05-20 | Async SQLite sessions via aiosqlite (ADR 0003) | asyncio-first app; sync sessions would block the event loop |
 | 2026-05-20 | BlockingQuestion as first-class persisted entity (ADR 0004) | Schema complet dès le début; shape connue via le protocole WebSocket |
-| 2026-05-22 | Post-gen validation: agents start `is_paused=True`; N-1 agents (not Generator Agent) introduce themselves (ADR 0006) | Builds trust; N-1 has domain context; establishes operational relationship |
+| 2026-05-22 | Post-gen team setup: agents start `is_paused=True`; N-1 agents (not Generator Agent) introduce themselves (ADR 0006) | Builds trust; N-1 has domain context; establishes operational relationship |
 | 2026-05-22 | Org restructuring deferred to v0.2 — Generator Agent orchestrates, consults N-1/N-2 (ADR 0005) | Memory preservation; agent domain knowledge improves proposals |
 | 2026-05-22 | Micro-adjustments via parent agent (v0.2) — N+1 owns team config for small changes (ADR 0005) | Distinct from restructuring; avoids Generator Agent overkill |
 | 2026-05-22 | Org generation: single LLM call (global coherence); `AgentState` created in `generate()`; `visual_character` from predefined list | Coherence over speed; no orphan invariant; PixiJS sprite safety |
 | 2026-05-25 | `AnthropicClient` streams unconditionally via `messages.stream()` (ADR 0007) | SDK raises `ValueError` for `messages.create()` with `max_tokens > 8192` on Opus 4+ |
-| 2026-05-25 | N-1 leaf nodes valid; N-2 count driven by context, not enforced; skills no upper cap | Initial org is a first draft — N-1 interviews refine scope and spawn specialists (ADR 0006) |
+| 2026-05-25 | N-1 leaf nodes valid; N-2 count driven by context, not enforced; skills no upper cap | Initial org is a first draft — N-1 setup conversations refine scope and spawn specialists (ADR 0006) |
 | 2026-05-25 | `generate()` accepts optional `on_agent_ready` callback for progress reporting | Pattern for future WebSocket streaming of org generation progress to the frontend |
+| 2026-05-27 | Natural conversation + single extraction call at validation time (ADR 0008) | Avoids per-turn JSON fragility; one clean extraction when the user is satisfied |
+| 2026-05-27 | Direct reconfiguration v0.1; parent-mediated governance for `work_hours`/`responsibilities`/`role_description` in v0.2 (ADR 0009) | Skills are descriptive only in v0.1 (no execution barrier); governance deferred until agents are autonomous |
