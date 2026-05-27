@@ -42,7 +42,11 @@ recreated on the next run — they exist, remember, and keep working.
 The **Generator Agent** is a one-shot meta-agent. Its sole purpose is to interview the
 solopreneur and produce the organization. It runs at onboarding with maximum inference
 quality (frontier cloud LLM), then becomes dormant. It can be reactivated if the user
-wants to restructure their team.
+wants to restructure their team. When reactivated, the Generator Agent conducts a
+focused delta interview with the user, then consults the affected N-1 (and N-2, if
+relevant) agents — their operational knowledge may shape the restructuring proposal.
+The user validates before any change is applied. This flow is implemented in v0.2
+(see ADR 0005).
 
 The **COO (N-0, Chief of Staff)** is the permanent operational super-agent. After
 onboarding, the COO is the user's primary point of contact. It coordinates N-1 leads,
@@ -209,7 +213,11 @@ N-0 + N-1. A more complex one may have N-0 through N-3 or beyond.
 
 The Generator Agent is a one-shot meta-agent. It does not belong to the operational
 org — it bootstraps it. Once onboarding is complete, it becomes dormant and can be
-reactivated only if the user explicitly wants to restructure the organization.
+reactivated only if the user explicitly wants to restructure the organization. When
+reactivated for restructuring, the Generator Agent conducts a focused delta interview
+with the user, then consults the N-1 (and N-2, if relevant) agents whose domains are
+affected. Agent-side input helps produce a better restructuring proposal. The user
+validates before any change is applied. See ADR 0005 and v0.2 roadmap.
 
 The onboarding is a **deep funnel-style interview**: the Generator Agent asks a
 progressive sequence of questions to understand:
@@ -232,6 +240,14 @@ From those answers, it produces:
 
 Skills are **descriptive in v0.1** (a name + a description of what the skill does).
 They become **executable Python functions in a sandbox starting from v0.2**.
+
+After org generation, the user is invited to meet each N-1 agent one-on-one before the
+org goes live. Each agent presents itself and its team (role, responsibilities, skills,
+schedule). The user validates, renames, or requests adjustments. Agents are created with
+`is_paused = True` and become active only after the user completes this step (or
+explicitly skips it). Micro-adjustments to a single agent's config (skills, escalation
+rules, work hours) go through the agent's parent, not the Generator Agent — see ADR 0005.
+The post-generation validation flow is documented in ADR 0006.
 
 ### 3.3 Agent autonomy model
 
@@ -340,36 +356,42 @@ with agents in visible states.
 2. **Organization generator** — outputs a complete, serialized agent hierarchy
    tailored to the user's specific business; excluded domains (TPE case) are skipped
 
-3. **2D RPG workspace** — a house layout with one room per business domain;
+3. **Post-generation team validation** — after org generation, the user is invited to
+   meet each N-1 agent one-on-one; each agent presents itself and its team (role,
+   responsibilities, skills, schedule); the user validates or adjusts before agents go
+   live; skippable; agents are created with `is_paused = True` and go live only after
+   validation
+
+4. **2D RPG workspace** — a house layout with one room per business domain;
    agents appear as 2D sprites (static, Option A) with visible states:
    idle / working alone / 1-on-1 meeting / group meeting; agents can move to shared
    spaces (meeting room, break room) for cross-domain collaboration
 
-4. **Org chart view** — a separate, always-accessible view of the full hierarchy;
+5. **Org chart view** — a separate, always-accessible view of the full hierarchy;
    each agent displays their 2D sprite, name, role, and current status
 
-5. **Agent interaction** — hover over any agent to see current task, pending
+6. **Agent interaction** — hover over any agent to see current task, pending
    questions, and memory state; click to open a direct conversation; watch live
    dialogues between agents in real time
 
-6. **Blocking questions zone** — a dedicated UI area where agents surface questions
+7. **Blocking questions zone** — a dedicated UI area where agents surface questions
    that require a human decision before they can proceed
 
-7. **Multi-agent chat** — the user talks to any agent at any level; agents call
+8. **Multi-agent chat** — the user talks to any agent at any level; agents call
    other agents to get help or delegate subtasks
 
-8. **Internal agent scheduler** — each agent runs an autonomous loop with a
+9. **Internal agent scheduler** — each agent runs an autonomous loop with a
    configurable wake-up interval; agents can also be triggered by messages from
    other agents or the user
 
-9. **Individual memory** per agent + **global knowledge base** shared across the org
-   (SQLite + Chroma, local-first, no cloud dependency required)
+10. **Individual memory** per agent + **global knowledge base** shared across the org
+    (SQLite + Chroma, local-first, no cloud dependency required)
 
-10. **Deliverables output** — agents write their outputs (documents, notes, drafts)
+11. **Deliverables output** — agents write their outputs (documents, notes, drafts)
     to a local structured directory (`./data/outputs/`); the UI surfaces recent and
     historical deliverables
 
-11. **LLM routing** — local inference via Ollama (default) + frontier cloud models
+12. **LLM routing** — local inference via Ollama (default) + frontier cloud models
     (Anthropic Claude, OpenAI, Google Gemini) for high-complexity tasks; routing is
     centralized, no agent picks its own model
 
@@ -383,6 +405,9 @@ with agents in visible states.
 - ❌ **No external integrations** — Gmail, Calendar, CRM, Stripe, Notion... (v0.2+)
 - ❌ **No projects feature** — project management with deliverables and deadlines
   (v0.2)
+- ❌ **No micro-adjustments via parent agent** — modifying a single agent's skills,
+  responsibilities, or escalation rules through a conversation with its parent agent
+  (v0.2); see ADR 0005
 - ❌ **No UI animations** — sprites are static; animated transitions come later (v0.3)
 - ❌ **No multi-user workspace** — single-user, local only (post-v1.0)
 - ❌ **No mobile app**
@@ -396,7 +421,11 @@ with agents in visible states.
 > but may never be a priority given the solopreneur-first target.
 
 - **v0.2**: Python sandbox for skills execution, web search, external event triggers,
-  projects feature, first external integrations — see integration philosophy below
+  projects feature, first external integrations — see integration philosophy below;
+  **org restructuring** — Generator Agent re-interview (with consultation of affected
+  N-1/N-2 agents) to add, remove, or update agents without destroying existing memory;
+  **micro-adjustments** — user talks to parent agent to update a single agent's skills,
+  responsibilities, or escalation rules (see ADR 0005)
 - **v0.3**: Broader MCP server support and validation (Calendar, Stripe, Notion...),
   animated UI sprites and transitions, richer agent memory visualization
 - **v0.4**: Multi-user shared workspace (client-server mode, shared org access) —

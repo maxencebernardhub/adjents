@@ -95,6 +95,15 @@ libraries for specific sub-problems.
 | SQLite ORM | `sqlmodel` | Pydantic + SQLAlchemy, matches our stack |
 | Async SQLite driver | `aiosqlite` | Non-blocking SQLite access in asyncio coroutines (see ADR 0003) |
 
+**`AnthropicClient` — streaming unconditionally**: `AnthropicClient.complete()`
+always uses `messages.stream()` + `get_final_text()`, regardless of `max_tokens`.
+The Anthropic SDK enforces a non-streaming token ceiling for Opus 4+ models (8192
+tokens via `MODEL_NONSTREAMING_TOKENS`); any `messages.create()` call exceeding
+that limit raises a `ValueError` before the request is sent. `GeneratorOrgGeneration`
+requires `_MAX_TOKENS = 32000` for complex org JSONs (10+ domains). Streaming
+unconditionally removes this ceiling, keeps the `complete()` signature unchanged,
+and future-proofs the client against SDK threshold changes. See ADR 0007.
+
 The agent loop, message bus, router, and scheduler are written from scratch. Each
 module is 100–300 lines. We keep full control and avoid dependency lock-in.
 
@@ -130,9 +139,22 @@ class AgentSpec(BaseModel):
     created_at: datetime
 ```
 
-`level` is an integer with no upper bound. We deliberately avoided
+`level` is an integer with no upper bound.
+
+`visual_character` must be one of a predefined set of valid sprite identifiers (e.g.
+`"character_suit"`, `"character_creative"`, `"character_tech"`...). The full list is
+injected into `prompts/generator/org_generation.md` so the LLM picks semantically from
+available sprites. A free string would point to a non-existent sprite file and break
+the PixiJS workspace. The user can change their agents' sprites during the post-generation
+validation conversation (ADR 0006). We deliberately avoided
 `Literal["N0", "N1", "N2"]` because the VISION specifies no hard cap on hierarchy
 depth — a complex business may have N-3 or deeper agents.
+
+**Restructuring safety (v0.1 constraint)**: `GeneratorOrgGeneration.generate()` always
+persists with plain INSERT — never a DELETE + INSERT. Agents removed during a future
+restructuring are marked inactive rather than deleted, so their memory (Chroma
+collections, SQLite records) survives. An `is_active: bool` field will be added to
+`AgentSpec` in v0.2 when restructuring is implemented. See ADR 0005.
 
 ### `AgentState`
 
@@ -160,6 +182,11 @@ class AgentState(BaseModel):
 
 `AgentState` is stored in SQLite and broadcast via WebSocket on every change. The
 PixiJS workspace and the org chart view both consume it.
+
+`AgentState` records are created by `GeneratorOrgGeneration.generate()` alongside their
+corresponding `AgentSpec`, with `status = PAUSED`. This guarantees that every `AgentSpec`
+in SQLite always has a corresponding `AgentState` — no orphan agents, no null checks
+in downstream code (API endpoints, WebSocket, org chart view).
 
 ### `Skill`
 
@@ -376,8 +403,9 @@ v0.2+ can replace the transport with Redis Pub/Sub without changing agent code.
 ### Lifecycle states
 
 ```text
-[ Created by Generator Agent ]
+[ Created by Generator Agent ]  (is_paused = True)
           │
+          │  user meets each N-1 agent 1-on-1 (or skips)
           ▼
       [ IDLE ]  ←──────────────────────────────┐
           │                                     │
@@ -393,6 +421,13 @@ v0.2+ can replace the transport with Redis Pub/Sub without changing agent code.
           ▼
       [ PAUSED ] ── user resumes ──→ [ IDLE ]
 ```
+
+Agents are created with `is_paused = True`. They transition to `IDLE` after the user
+meets each N-1 agent one-on-one (or explicitly skips the step). These conversations are
+between the user and each N-1 agent directly — not with the Generator Agent. Each N-1
+presents itself and its team; the user validates or adjusts before the org goes live.
+This prevents agents from acting autonomously before the user has reviewed their
+configuration. See ADR 0006.
 
 ### The agent loop
 
