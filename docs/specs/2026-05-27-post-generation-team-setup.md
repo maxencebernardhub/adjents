@@ -1,6 +1,6 @@
 # Feature: Post-Generation Team Setup
 
-> Spec date: 2026-05-27 | Status: Validated | Next: Implementation Plan
+> Spec date: 2026-05-27 | Updated: 2026-05-28 | Status: Validated | Next: Implementation Plan
 
 ---
 
@@ -57,13 +57,15 @@ surfaces agent reconfiguration.
   `active_conversation_id` and returns the active agent's response. `reply()` always
   routes to the **currently active agent** (`active_agent_id`), which may be a N-2
   or N-3 — not necessarily the root agent.
-- `complete_current_agent(session_id, root_agent_id) -> str | None` closes the
+- `complete_current_agent(session_id, root_agent_id) -> str` closes the
   active sub-agent's conversation, advances the traversal (via the depth-first
-  algorithm described below), **makes a new LLM call** to generate the next agent's
-  opening message, and returns it. Returns `None` when the entire subtree has been
-  visited (root agent is ready to deliver its final summary).
+  algorithm described below), **makes a new LLM call**, and returns either:
+  - the next sub-agent's opening message (if unvisited sub-agents remain), or
+  - the root agent's final team summary (if the entire subtree has been visited).
+  Never returns `None`. The caller detects "subtree complete" by checking
+  `AgentValidationRecord.navigation_stack == []` after the call.
   `AgentState.status` of the closing agent reverts to `PAUSED`; the next agent
-  moves to `IN_MEETING_1ON1`.
+  (or the root agent for the final summary) moves to `IN_MEETING_1ON1`.
 - The traversal state is fully persisted in `AgentValidationRecord` — an
   interruption at any depth (including mid-N-3 or deeper) resumes exactly where it
   stopped on the next `start_agent_conversation()` call.
@@ -131,7 +133,8 @@ surfaces agent reconfiguration.
 | Event | Status change |
 | --- | --- |
 | `start_agent_conversation()` or `complete_current_agent()` opens a conversation | Active agent: `PAUSED → IN_MEETING_1ON1` |
-| `complete_current_agent()` closes current, opens next | Closing agent: `IN_MEETING_1ON1 → PAUSED`; next agent: `PAUSED → IN_MEETING_1ON1` |
+| `complete_current_agent()` closes current, opens next sub-agent | Closing agent: `IN_MEETING_1ON1 → PAUSED`; next sub-agent: `PAUSED → IN_MEETING_1ON1` |
+| `complete_current_agent()` closes last sub-agent (subtree complete) | Closing agent: `IN_MEETING_1ON1 → PAUSED`; root agent: `PAUSED → IN_MEETING_1ON1` (delivers final summary) |
 | `validate_team()` or `skip_agent()` completes a root agent | All involved agents: `IN_MEETING_1ON1 → PAUSED` |
 | `_go_live()` | All agents: `PAUSED → IDLE`; `AgentSpec.is_paused = False` |
 | `AgentReconfiguration.start()` | Target agent: current status → `IN_MEETING_1ON1` |
@@ -207,12 +210,18 @@ def _get_next_agent(current_id, stack, visited, db):
             parent_id = stack[-1]
             return db.get_agent(parent_id)
         else:
-            return None  # Entire subtree visited → root agent delivers final summary
+            return None  # Entire subtree visited — see note below
 ```
 
 This algorithm is depth-agnostic: it handles N-2, N-3, N-4, and beyond without
 modification. `navigation_stack` and `visited_agent_ids` are persisted to
 `AgentValidationRecord` after every call, enabling exact-position resume on restart.
+
+**When `_get_next_agent` returns `None`** (stack empty after the final pop),
+`complete_current_agent()` does **not** forward `None` to the caller. Instead, it
+makes one final LLM call on the **root agent** to generate its team summary, sets
+`active_agent_id = root_agent_id`, and returns that string. The caller detects
+subtree completion by checking `record.navigation_stack == []` after the call.
 
 ---
 

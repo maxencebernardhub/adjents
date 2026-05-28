@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-27 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
+> Updated: 2026-05-28 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
 
 ---
 
@@ -290,9 +290,47 @@ Feature Brief written and validated for Post-generation team setup (user ↔ age
 
 ---
 
+## Last session — 2026-05-28
+
+Implementation plan written and validated for Post-generation team setup.
+
+### Plan design decisions (2026-05-28)
+
+- **`complete_current_agent()` → always `str` (Option B)**: never returns `None`;
+  when the subtree is exhausted, makes one final LLM call on the root agent for its
+  team summary; caller detects completion via `record.navigation_stack == []`
+- **`_advance_traversal` pure helper**: replaces the `_get_next_agent` pseudocode from
+  the spec; handles backtracking internally via `while True` loop; takes
+  `children_by_parent: dict[str, list[AgentSpec]]` (pre-loaded) — fully testable without DB
+- **LLM client**: `AnthropicClient(api_key, model="claude-sonnet-4-6")` constructed
+  directly by the caller — NOT via `LLMRouter.get_generator_client()` which returns
+  `claude-opus-4-7`
+- **`team_setup.py` line count exception**: file will exceed 300-line soft limit;
+  splitting artificially would harm cohesion — documented as deliberate exception
+- **`_call_extraction_llm` + `_apply_agent_updates` duplication**: ~70 lines duplicated
+  between `TeamSetupOrchestrator` and `AgentReconfiguration`; accepted for v0.1
+
+### Plan coverage
+
+- 7 tasks (T1–T7), TDD order T1 → T2 → T3 → T4 → T5 → T6 → T7
+- ~52 tests: T1 (9) + T2 (12) + T4 (49, including COO-only + resume + state revert) +
+  T5 (7)
+- `mini_org` + `coo_only_org` fixtures defined; mock LLM call ordering documented
+- `stub_prompt_loader` fixture defined for T4 tests (T3 prompts not required for pytest)
+- T7 (documentation updates) runs last, as part of phase 4
+
+### Artefacts (2026-05-28)
+
+- `docs/specs/2026-05-28-post-generation-team-setup-plan.md` — Implementation Plan
+- `docs/specs/2026-05-27-post-generation-team-setup.md` — updated (Option B spec)
+
+**Stopped at:** Implementation plan finalised — ready for TDD implementation (Phase 4 of /feature)
+
+---
+
 ## Next steps
 
-1. **Phase 2** — Post-generation team setup: implementation plan
+1. **Phase 4** — Post-generation team setup: TDD implementation (T1 → T7)
 
 ---
 
