@@ -360,38 +360,45 @@ with agents in visible states.
    meet each N-1 agent one-on-one; each agent presents itself and its team (role,
    responsibilities, skills, schedule); the user validates or adjusts before agents go
    live; skippable; agents are created with `is_paused = True` and go live only after
-   validation
+   validation (see ADR 0006)
 
-4. **2D RPG workspace** — a house layout with one room per business domain;
+4. **Direct agent reconfiguration** — after agents go live, the user can open a
+   conversation with any agent to review and adjust its configuration (name, role
+   description, responsibilities, skills, work hours, scheduler interval, visual
+   character); changes are extracted by a second LLM call at the end of the
+   conversation and applied directly to the DB; structural fields (domain, level,
+   parent) are frozen (see ADR 0009)
+
+5. **2D RPG workspace** — a house layout with one room per business domain;
    agents appear as 2D sprites (static, Option A) with visible states:
    idle / working alone / 1-on-1 meeting / group meeting; agents can move to shared
    spaces (meeting room, break room) for cross-domain collaboration
 
-5. **Org chart view** — a separate, always-accessible view of the full hierarchy;
+6. **Org chart view** — a separate, always-accessible view of the full hierarchy;
    each agent displays their 2D sprite, name, role, and current status
 
-6. **Agent interaction** — hover over any agent to see current task, pending
+7. **Agent interaction** — hover over any agent to see current task, pending
    questions, and memory state; click to open a direct conversation; watch live
    dialogues between agents in real time
 
-7. **Blocking questions zone** — a dedicated UI area where agents surface questions
+8. **Blocking questions zone** — a dedicated UI area where agents surface questions
    that require a human decision before they can proceed
 
-8. **Multi-agent chat** — the user talks to any agent at any level; agents call
+9. **Multi-agent chat** — the user talks to any agent at any level; agents call
    other agents to get help or delegate subtasks
 
-9. **Internal agent scheduler** — each agent runs an autonomous loop with a
-   configurable wake-up interval; agents can also be triggered by messages from
-   other agents or the user
+10. **Internal agent scheduler** — each agent runs an autonomous loop with a
+    configurable wake-up interval; agents can also be triggered by messages from
+    other agents or the user
 
-10. **Individual memory** per agent + **global knowledge base** shared across the org
+11. **Individual memory** per agent + **global knowledge base** shared across the org
     (SQLite + Chroma, local-first, no cloud dependency required)
 
-11. **Deliverables output** — agents write their outputs (documents, notes, drafts)
+12. **Deliverables output** — agents write their outputs (documents, notes, drafts)
     to a local structured directory (`./data/outputs/`); the UI surfaces recent and
     historical deliverables
 
-12. **LLM routing** — local inference via Ollama (default) + frontier cloud models
+13. **LLM routing** — local inference via Ollama (default) + frontier cloud models
     (Anthropic Claude, OpenAI, Google Gemini) for high-complexity tasks; routing is
     centralized, no agent picks its own model
 
@@ -405,9 +412,11 @@ with agents in visible states.
 - ❌ **No external integrations** — Gmail, Calendar, CRM, Stripe, Notion... (v0.2+)
 - ❌ **No projects feature** — project management with deliverables and deadlines
   (v0.2)
-- ❌ **No micro-adjustments via parent agent** — modifying a single agent's skills,
-  responsibilities, or escalation rules through a conversation with its parent agent
-  (v0.2); see ADR 0005
+- ❌ **No parent-mediated governance for reconfiguration** — in v0.1, all non-structural
+  fields are modifiable directly via `AgentReconfiguration`; in v0.2, parent agents
+  will validate changes to `work_hours`, `responsibilities`, and `role_description`
+  for non-COO agents before applying them (requires Python sandbox — see ADR 0005 and
+  ADR 0009)
 - ❌ **No UI animations** — sprites are static; animated transitions come later (v0.3)
 - ❌ **No multi-user workspace** — single-user, local only (post-v1.0)
 - ❌ **No mobile app**

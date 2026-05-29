@@ -138,3 +138,27 @@ class BusinessContextTable(SQLModel, table=True):
     work_hours: str | None = Field(default=None)
     additional_context: str | None = Field(default=None)
     created_at: str  # ISO 8601
+
+
+class ValidationSessionTable(SQLModel, table=True):
+    __tablename__ = "validation_sessions"
+
+    id: str = Field(primary_key=True)
+    started_at: str  # ISO 8601
+    completed_at: str | None = Field(default=None)
+    skipped: bool = Field(default=False)
+
+
+class AgentValidationRecordTable(SQLModel, table=True):
+    __tablename__ = "agent_validation_records"
+
+    id: str = Field(primary_key=True)
+    session_id: str
+    root_agent_id: str
+    status: str  # AgentValidationStatus value
+    active_agent_id: str | None = Field(default=None)
+    active_conversation_id: str | None = Field(default=None)
+    navigation_stack: str = Field(default="[]")  # JSON: list[str]
+    conversation_ids: str = Field(default="[]")  # JSON: list[str]
+    visited_agent_ids: str = Field(default="[]")  # JSON: list[str]
+    validated_at: str | None = Field(default=None)  # ISO 8601

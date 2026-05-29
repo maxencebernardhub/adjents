@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-28 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
+> Updated: 2026-05-28 (session 3) | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
 
 ---
 
@@ -13,7 +13,7 @@
 | Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
 | Generator Agent — interview | ✅ | ✅ | ✅ |
 | Generator Agent — org generation | ✅ | ✅ | ✅ |
-| Post-generation team setup (user ↔ agents) | ✅ | — | — |
+| Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ |
 | LLM router | — | ✅ (Anthropic only) | ✅ |
 | LLM clients (Ollama, Anthropic, OpenAI, Google) | — | ✅ (Anthropic only) | ✅ |
 | Async message dispatcher | — | — | — |
@@ -328,9 +328,137 @@ Implementation plan written and validated for Post-generation team setup.
 
 ---
 
+## Last session — 2026-05-28 (session 2)
+
+Full TDD implementation of Post-generation team setup (T1 → T7, all complete).
+
+### Files created
+
+- `backend/adjents/db/tables.py` — `ValidationSessionTable`, `AgentValidationRecordTable`
+- `backend/adjents/db/convert.py` — 4 new convert functions (session + record roundtrip)
+- `backend/adjents/generator/team_setup.py` — `AgentValidationStatus`, `ValidationSession`,
+  `AgentValidationRecord`, `TeamSetupError`, `_advance_traversal`, `_build_agent_context_message`,
+  `TeamSetupOrchestrator` (full Mode 1 orchestration)
+- `backend/adjents/agents/reconfiguration.py` — `AgentReconfiguration` (Mode 2 direct reconfiguration)
+- `backend/adjents/prompts/agent/intro.md` — agent introduction + adjustment conversation
+- `backend/adjents/prompts/agent/extract_agent_adjustments.md` — extraction prompt (JSON output)
+- `backend/scripts/smoke_team_setup.py` — mock mode (automated assertions) + real mode
+- `backend/tests/test_team_setup_models.py` — 9 pure roundtrip tests
+- `backend/tests/test_team_setup.py` — 49 orchestrator tests (traversal, conversation, go-live, skip)
+- `backend/tests/test_agent_reconfiguration.py` — 7 reconfiguration tests
+- `docs/decisions/0008-team-setup-natural-conversation-extraction.md` — ADR
+- `docs/decisions/0009-direct-agent-reconfiguration-v01.md` — ADR
+
+### Test counts
+
+- 238 tests passing (161 existing + 77 new), ruff + mypy --strict clean
+- Smoke test: mock mode fully automated and passing
+
+### Key decisions made during implementation
+
+- `_advance_traversal` pure function handles backtracking via `while True` loop; takes
+  `children_by_parent: dict` pre-loaded by caller — fully testable without DB
+- `complete_current_agent()` always returns `str` (Option B); caller detects subtree
+  completion via `record.navigation_stack == []`
+- `sqlmodel.select` required (not `sqlalchemy.select`) for SQLModel's `exec()` to
+  return typed model instances rather than `Row` tuples
+- `_call_extraction_llm` + `_apply_agent_updates` (~70 lines) intentionally duplicated
+  between `TeamSetupOrchestrator` and `AgentReconfiguration` — avoids cross-direction
+  dependency between `generator/` and `agents/` for v0.1
+- `team_setup.py` exceeds 300-line soft limit deliberately — splitting would harm
+  cohesion; documented exception
+
+**Stopped at:** T7 complete — feature ready for code review (Phase 5 of /feature)
+
+---
+
+## Last session — 2026-05-28 (session 3)
+
+Bugfix: agent context injection for team setup was incomplete.
+
+### Problem
+
+`_build_agent_context_message` accepted a `direct_reports` parameter and built a
+"Direct reports" block, but both call sites in `TeamSetupOrchestrator` passed empty
+lists (`[], {}`), so agents never received information about their sub-agents. Additionally,
+the direct reports block itself only projected name + role + skill names — omitting
+responsibilities, work_hours, scheduler_interval_seconds, and escalation_rules.
+
+Discovered via real-mode smoke test: Jordan (COO) never mentioned Alex, Maya, Felix;
+Alex said "no direct reports" despite having Sam.
+
+### Changes
+
+- `backend/adjents/generator/team_setup.py`:
+  - `_build_agent_context_message`: extended direct reports block to include
+    responsibilities, work_hours, scheduler_interval_seconds, escalation_rules,
+    and skill `requires_human_review` flag
+  - `TeamSetupOrchestrator._load_direct_reports()`: new helper (SELECT by `parent_id`)
+  - `start_agent_conversation()`: calls `_load_direct_reports` and passes result to context builder
+  - `complete_current_agent()`: same fix for sub-agents opened during DFS traversal
+  - Summary request message: reworded to explicitly ask the agent to present its team
+- `backend/adjents/prompts/agent/intro.md`: added instruction to present direct reports
+  in the opening message
+- `backend/tests/test_team_setup.py`: added `test_build_agent_context_message_direct_reports_full_config`
+  covering responsibilities, work_hours, scheduler_interval, escalation_rules, requires_human_review
+
+`AgentReconfiguration` was already correct — it called its own `_load_direct_reports` and
+passed the result to `_build_agent_context_message` (imported from `team_setup.py`).
+
+**Tests:** 20/20 passing, ruff + mypy --strict clean.
+
+**Stopped at:** bugfix complete — feature ready for code review (Phase 5 of /feature)
+
+---
+
+## Last session — 2026-05-28 (session 4)
+
+Spec compliance review (Phase 5 of /feature) completed by spec-reviewer subagent.
+
+### Process additions
+
+- Created `~/.claude/agents/spec-reviewer.md` — new specialized subagent for spec
+  compliance review (distinct from code-reviewer: checks "was the right thing built?"
+  vs "was it built right?")
+- Updated `~/.claude/skills/feature/SKILL.md` — inserted Phase 5 (Spec Compliance
+  Review) between TDD and Code Review; renumbered Code Review → Phase 6, Commit/PR → Phase 7
+- Created `docs/reviews/` directory for storing spec-reviewer and code-reviewer reports
+
+### Spec compliance review results
+
+Full report: `docs/reviews/2026-05-28-post-generation-team-setup-spec-compliance.md`
+
+**Verdict: ⚠️ Partially compliant.** 3 violations, 5 gaps, 3 deviations identified.
+
+Items to address before code review:
+
+| # | Type | Description |
+| --- | --- | --- |
+| V1 | Violation | `active_agent_id = None` instead of `root_agent_id` after subtree exhaustion (`team_setup.py:451`) |
+| V2 | Violation | Feature Brief text outdated vs ADR 0006 — fix by updating Feature Brief, not reverting `intro.md` |
+| V3 | Violation | `AgentReconfiguration` raises `ValueError` instead of `TeamSetupError` on retry exhaustion |
+| G1 | Gap | No `_log.warning()` when frozen fields are dropped in `_apply_agent_updates` |
+| G2 | Gap | No `_log.warning()` when skill name not found (remove/update) |
+| G3 | Gap | `skip_agent()` returns `str` instead of `dict[str, Any]` per spec |
+| G4 | Gap | `skip_all()` returns `None` instead of `dict[str, Any]` per spec |
+| G5 | Gap | `get_subtree_summary()` doesn't handle `agent_id=None` (full-org case) |
+
+Deviations (non-blocking, noted as tech debt):
+
+- D1: `_MAX_RETRIES` module-level vs class attribute
+- D2: `_build_agent_context_message` imported from `generator/` into `agents/` (cross-direction dep)
+- D3: `_call_extraction_llm` signatures diverge between the two classes
+
+**Stopped at:** spec compliance review complete — next: address V1/V2/V3/G1-G5, then Phase 6 (code review)
+
+---
+
 ## Next steps
 
-1. **Phase 4** — Post-generation team setup: TDD implementation (T1 → T7)
+1. Address spec compliance findings (V1, V2, V3, G1–G5)
+2. Phase 6: code review (`code-reviewer` subagent)
+3. Commit + merge `feat/post-generation-team-setup` into main
+4. Next feature: LLM Router
 
 ---
 
@@ -373,3 +501,5 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-25 | `generate()` accepts optional `on_agent_ready` callback for progress reporting | Pattern for future WebSocket streaming of org generation progress to the frontend |
 | 2026-05-27 | Natural conversation + single extraction call at validation time (ADR 0008) | Avoids per-turn JSON fragility; one clean extraction when the user is satisfied |
 | 2026-05-27 | Direct reconfiguration v0.1; parent-mediated governance for `work_hours`/`responsibilities`/`role_description` in v0.2 (ADR 0009) | Skills are descriptive only in v0.1 (no execution barrier); governance deferred until agents are autonomous |
+| 2026-05-28 | `_apply_agent_updates` + `_call_extraction_llm` duplicated between `TeamSetupOrchestrator` and `AgentReconfiguration` | Avoids cross-direction `generator/ → agents/` dependency at v0.1 scale; accepted per ADR 0008 |
+| 2026-05-28 | `sqlmodel.select` required (not `sqlalchemy.select`) for typed SQLModel `exec()` results | `sqlalchemy.select` returns `Row` tuples; `sqlmodel.select` returns scalar model instances |

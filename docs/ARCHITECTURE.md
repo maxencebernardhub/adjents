@@ -235,6 +235,52 @@ class Memory(BaseModel):
     # embedding is managed by Chroma — not stored here
 ```
 
+### `ValidationSession`
+
+Tracks a single post-generation team setup run. Created once per org by
+`TeamSetupOrchestrator.start_session()`. `completed_at` is set atomically when
+all agents go live (`_go_live()`).
+
+```python
+class ValidationSession(BaseModel):
+    id: str
+    started_at: datetime
+    completed_at: datetime | None
+    skipped: bool
+```
+
+### `AgentValidationRecord`
+
+One record per root agent (COO or N-1) within a `ValidationSession`. Tracks the
+depth-first conversation traversal through the agent's subtree.
+
+```python
+class AgentValidationStatus(StrEnum):
+    PENDING     = "pending"
+    IN_PROGRESS = "in_progress"
+    VALIDATED   = "validated"
+    SKIPPED     = "skipped"
+
+class AgentValidationRecord(BaseModel):
+    id: str
+    session_id: str
+    root_agent_id: str
+    status: AgentValidationStatus
+    active_agent_id: str | None        # currently active agent in this subtree
+    active_conversation_id: str | None
+    navigation_stack: list[str]        # DFS stack; [] = subtree exhausted
+    conversation_ids: list[str]        # all conversations in this record
+    visited_agent_ids: list[str]       # agents whose conversations are closed
+    validated_at: datetime | None
+```
+
+`navigation_stack`, `conversation_ids`, and `visited_agent_ids` are JSON-serialized
+in `db/tables.py` (see serialization table below).
+
+`TeamSetupOrchestrator` drives the depth-first traversal and calls a single extraction
+LLM at `validate_team()` time to apply all adjustments in one pass. See ADR 0006 for
+the full team-setup design and ADR 0008 for the extraction pattern and retry logic.
+
 ### `Conversation`
 
 ```python
@@ -341,6 +387,7 @@ to avoid SQLAlchemy reserved names (e.g. `metadata` → `metadata_json`).
 | `Memory` | `metadata` | `TEXT` (JSON object) |
 | `Conversation` | `participant_agents`, `message_ids` | `TEXT` (JSON array) |
 | `Project` | `deliverable_descriptions`, `contributor_agent_ids` | `TEXT` (JSON array) |
+| `AgentValidationRecord` | `navigation_stack`, `conversation_ids`, `visited_agent_ids` | `TEXT` (JSON array) |
 
 ### DB engine setup
 
@@ -428,6 +475,11 @@ between the user and each N-1 agent directly — not with the Generator Agent. E
 presents itself and its team; the user validates or adjusts before the org goes live.
 This prevents agents from acting autonomously before the user has reviewed their
 configuration. See ADR 0006.
+
+After go-live, any agent can be reconfigured directly via `AgentReconfiguration`
+(`agents/reconfiguration.py`): the user opens a conversation, requests changes, and a
+single extraction LLM call applies them. Structural fields (`domain`, `level`,
+`parent_id`) are frozen in v0.1. See ADR 0009.
 
 ### The agent loop
 
@@ -682,9 +734,17 @@ prompt = loader.render("agent/think_and_act",
 | --- | --- |
 | Onboarding interview starts | `generator/interview` |
 | Generator produces the org | `generator/org_generation` |
+| Post-generation team setup: agent introduction | `agent/intro` |
+| Post-generation team setup: extract adjustments | `agent/extract_agent_adjustments` |
+| Direct agent reconfiguration: extract adjustments | `agent/extract_agent_adjustments` |
 | Every `think_and_act` iteration | `agent/think_and_act` |
 | Agent summarizes its memories | `agent/memory_summary` |
 | COO plans the day | `coo/daily_planning` |
+
+`agent/extract_agent_adjustments` is shared by both `TeamSetupOrchestrator` and
+`AgentReconfiguration`. The prompt reads a full conversation transcript and returns a
+JSON object with `agent_updates`. A retry loop (max 3 attempts) handles malformed JSON
+responses. See ADR 0008 for the full extraction pattern design.
 
 ---
 

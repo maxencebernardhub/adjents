@@ -1,7 +1,7 @@
 # ADR 0006 — Post-Generation Team Validation Before Go-Live
 
 **Date**: 2026-05-22
-**Status**: Accepted
+**Status**: Accepted — Full design added 2026-05-28
 
 ---
 
@@ -74,20 +74,86 @@ directly.
 
 ---
 
+## Full design (2026-05-28)
+
+The initial sketch above described the intent. The implementation settled on the
+following concrete design.
+
+### Two modes
+
+**Mode 1 — Post-generation team setup (`TeamSetupOrchestrator`)**:
+A guided, resumable flow where the user meets each agent before go-live.
+
+- A `ValidationSession` is created with one `AgentValidationRecord` per COO and
+  N-1 root agent (level ≤ 1).
+- The COO is always the first conversation. N-1 conversations may only start after
+  the COO record is validated or skipped.
+- Each N-1 record uses **depth-first traversal** through its subtree. A
+  `navigation_stack` (list of agent IDs, JSON-serialized) tracks the current path.
+  An empty stack signals subtree completion.
+- `complete_current_agent()` closes the current agent's conversation, advances the
+  traversal (or returns the root's team summary if exhausted), and returns the next
+  agent's opening message. It always returns a `str` — the caller detects completion
+  via `record.navigation_stack == []`.
+- `validate_team()` runs the extraction LLM on all conversations in the record's
+  `conversation_ids`, applies updates, marks the record `VALIDATED`, and fires
+  `_go_live()` if all records are done.
+- `skip_agent()` / `skip_all()` mark records `SKIPPED` and fire `_go_live()`.
+- `_go_live()` is atomic: sets all `AgentSpec.is_paused = False`, all
+  `AgentState.status = IDLE`, and `ValidationSession.completed_at = now` in one
+  DB commit.
+
+**Mode 2 — Direct agent reconfiguration (`AgentReconfiguration`)**:
+Available at any time after go-live. See ADR 0009.
+
+### Prompts
+
+Two new prompts in `prompts/agent/`:
+
+- `intro.md` — system prompt for the introduction / adjustment conversation. Used
+  by both modes. Model hint: `claude-sonnet-4-6`.
+- `extract_agent_adjustments.md` — extraction prompt. Reads the full conversation
+  transcript (delimited by `---AGENT:<uuid>---` markers) and returns a single JSON
+  object with `agent_updates`. Used by both modes. Model hint: `claude-sonnet-4-6`.
+
+The extraction pattern is documented in ADR 0008.
+
+### Agent context injection
+
+Agent data (`AgentSpec` + skills + direct reports with their skills) is injected as
+the **first user message**, not in the system prompt. This avoids `str.format_map()`
+`KeyError` on user-supplied text that may contain curly braces. Consistent with the
+same decision in `generator/org_generation.py`.
+
+### AgentState transitions during team setup
+
+```text
+[ is_paused = True ] ──► start_agent_conversation ──► IN_MEETING_1ON1
+        │                                                      │
+        │                                   complete_current_agent → PAUSED (current)
+        │                                   next sub-agent → IN_MEETING_1ON1
+        │
+        │                       validate_team / skip_all
+        └───────────────────────────────────────────────────► IDLE (go_live)
+```
+
+---
+
 ## Consequences
 
 **v0.1 code:**
 
-- `generate()` persists all agents with `is_paused = True`
-- New prompt: `prompts/agent/intro.md` — N-1 agent introduction script (presents self
-  and direct reports; handles user questions and adjustment requests)
-- The onboarding flow (frontend or API) sequences the introduction conversations after
-  generation completes, then unpauses all agents on user confirmation
+- `generate()` persists all agents with `is_paused = True` (unchanged)
+- New prompts: `prompts/agent/intro.md` + `prompts/agent/extract_agent_adjustments.md`
+- New models: `ValidationSession`, `AgentValidationRecord` (Pydantic + SQLModel tables
+  and convert functions)
+- `TeamSetupOrchestrator` in `generator/team_setup.py` implements Mode 1
+- `AgentReconfiguration` in `agents/reconfiguration.py` implements Mode 2
+- Smoke test: `scripts/smoke_team_setup.py` (mock mode + real mode)
 
 **Future versions:**
 
-- In v0.2, when micro-adjustments via parent agent are supported, the intro conversation
-  can already apply small spec changes (rename, skill addition) before go-live — the
-  infrastructure will be the same
+- In v0.2, when parent-mediated governance is supported, `AgentReconfiguration` gains
+  a validation layer for non-COO agents (see ADR 0005 amendment and ADR 0009)
 - The `is_active` flag planned for v0.2 (ADR 0005) is distinct: it marks agents
   deactivated by restructuring, not agents awaiting initial validation
