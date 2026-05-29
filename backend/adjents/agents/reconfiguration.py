@@ -16,18 +16,20 @@ from adjents.db.tables import (
     MessageTable,
     SkillTable,
 )
-from adjents.generator.team_setup import _build_agent_context_message
+from adjents.errors import TeamSetupError
 from adjents.llm.anthropic_client import AnthropicClient
 from adjents.prompts.loader import PromptLoader
+from adjents.utils.agent_context import _build_agent_context_message
 
 _log = logging.getLogger(__name__)
-_MAX_RETRIES = 3
 _FROZEN_FIELDS = frozenset({"domain", "level", "parent_id"})
 _INTERVAL_MIN = 300
 _INTERVAL_MAX = 3600
 
 
 class AgentReconfiguration:
+    _MAX_RETRIES: int = 3
+
     def __init__(
         self,
         agent_id: str,
@@ -115,7 +117,7 @@ class AgentReconfiguration:
         transcript = "\n\n".join(conversations)
         messages: list[dict[str, str]] = [{"role": "user", "content": transcript}]
         last_error = ""
-        for attempt in range(_MAX_RETRIES):
+        for attempt in range(self._MAX_RETRIES):
             if attempt > 0:
                 messages.append(
                     {
@@ -132,8 +134,9 @@ class AgentReconfiguration:
             except json.JSONDecodeError as exc:
                 last_error = str(exc)
                 messages.append({"role": "assistant", "content": raw})
-        raise ValueError(
-            f"Extraction LLM failed after {_MAX_RETRIES} attempts: {last_error}"
+        # V3: raise TeamSetupError (not ValueError) on retry exhaustion
+        raise TeamSetupError(
+            f"Extraction LLM failed after {self._MAX_RETRIES} attempts: {last_error}"
         )
 
     async def _apply_agent_updates(self, updates: list[dict[str, Any]]) -> None:
@@ -152,6 +155,8 @@ class AgentReconfiguration:
 
             for key, value in fields.items():
                 if key in _FROZEN_FIELDS:
+                    # G1: warn when frozen fields are dropped
+                    _log.warning("Dropping frozen field %r for agent %s", key, agent_id)
                     continue
                 if key == "visual_character" and value not in VALID_VISUAL_CHARACTERS:
                     _log.warning("Dropping invalid visual_character: %r", value)
@@ -193,10 +198,18 @@ class AgentReconfiguration:
                     )
                 ).all()
                 remove_ids: list[str] = []
+                found_remove_names: set[str] = set()
                 for s in existing_skills:
                     if s.name in skills_to_remove:
                         remove_ids.append(s.id)
+                        found_remove_names.add(s.name)
                         await self._session.delete(s)
+                # G2: warn for skill names not found during removal
+                for name in skills_to_remove:
+                    if name not in found_remove_names:
+                        _log.warning(
+                            "Skill %r not found for removal on agent %s", name, agent_id
+                        )
                 current_skill_ids = [
                     i for i in current_skill_ids if i not in remove_ids
                 ]
@@ -205,6 +218,12 @@ class AgentReconfiguration:
                 skill_name: str = su["name"]
                 skill_fields: dict[str, Any] = su.get("fields", {})
                 if not current_skill_ids:
+                    # G2: warn when no skills exist to update
+                    _log.warning(
+                        "Skill %r not found for update on agent %s (no skills)",
+                        skill_name,
+                        agent_id,
+                    )
                     continue
                 s_row = (
                     await self._session.exec(
@@ -221,6 +240,13 @@ class AgentReconfiguration:
                         else:
                             setattr(s_row, k, v)
                     self._session.add(s_row)
+                else:
+                    # G2: warn when skill name not found for update
+                    _log.warning(
+                        "Skill %r not found for update on agent %s",
+                        skill_name,
+                        agent_id,
+                    )
 
             spec_row.skill_ids = json.dumps(current_skill_ids)
             self._session.add(spec_row)

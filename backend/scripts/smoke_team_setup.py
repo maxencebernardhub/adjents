@@ -429,8 +429,15 @@ async def _run_mode1_mock(
 
     # skip_all remaining N-1 records (N-1b + N-1c)
     _step("skip_all (N-1b + N-1c pending)")
-    await orchestrator2.skip_all(session_id)
-    _ok("skip_all: N-1b + N-1c skipped, go_live triggered")
+    skip_result = await orchestrator2.skip_all(session_id)
+    assert isinstance(skip_result, dict), "skip_all must return dict"
+    assert "summary" in skip_result and "warning" in skip_result
+    agent_count = len(skip_result["summary"].get("agents", []))
+    _ok(
+        f"skip_all: records skipped, go_live triggered"
+        f" | warning: {skip_result['warning']!r}"
+    )
+    _ok(f"skip_all summary: {agent_count} agents in full org")
 
     await _assert_go_live(session, session_id)
 
@@ -551,8 +558,9 @@ async def _run_real(session: AsyncSession, ids: dict[str, str]) -> None:
 
     _hr()
     print("[skip_all remaining records — go live]")
-    await orchestrator.skip_all(session_id)
-    print("All remaining records skipped. Org is now live.")
+    skip_result = await orchestrator.skip_all(session_id)
+    print(f"Warning: {skip_result['warning']}")
+    print(f"Org summary: {len(skip_result['summary'].get('agents', []))} agents")
 
     # MODE 2
     _step("MODE 2 — Direct agent reconfiguration on N-2 (real LLM)")

@@ -1087,3 +1087,48 @@ cd backend
 uv run python scripts/smoke_team_setup.py          # mock mode
 uv run python scripts/smoke_team_setup.py --real   # requires ANTHROPIC_API_KEY
 ```
+
+---
+
+## Post-implementation amendments — 2026-05-29
+
+The following deviations from the plan were identified in the spec compliance review
+and corrected before the code review phase.
+
+### New shared modules (not in original plan)
+
+Two helpers were extracted to neutral shared modules instead of being duplicated or
+left in `generator/`:
+
+| File | Contents | Why |
+| --- | --- | --- |
+| `backend/adjents/errors.py` | `TeamSetupError` | Shared error class; avoids `generator/ → agents/` import if `AgentReconfiguration` needed to import it from `team_setup.py` |
+| `backend/adjents/utils/__init__.py` | package init | Required for `utils/` to be importable |
+| `backend/adjents/utils/agent_context.py` | `_build_agent_context_message` | Neutral helper; no dependency on `generator/` or `agents/` internals |
+
+Both classes import from these shared modules. `_apply_agent_updates` (~70 lines)
+remains duplicated as planned.
+
+### Other corrections
+
+| # | Item | Change |
+| --- | --- | --- |
+| V1 | `complete_current_agent()` | `record.active_agent_id = root_agent_id` (was `None`) |
+| V3 | Retry exhaustion error type | Raises `TeamSetupError` (was `ValueError` in `AgentReconfiguration`) |
+| G1 | Frozen field drops | `_log.warning(...)` added to both `_apply_agent_updates` copies |
+| G2 | Skill not found | `_log.warning(...)` added for remove and update paths |
+| G3 | `skip_agent()` return | `dict[str, Any]` with `"summary"` + `"warning"` keys (was `str`) |
+| G4 | `skip_all()` return | `dict[str, Any]` with `"summary"` + `"warning"` keys (was `None`) |
+| G5 | `get_subtree_summary(None)` | `None` now returns full org (was `str` only) |
+| D1 | `_MAX_RETRIES` | Class attribute `_MAX_RETRIES: int = 3` (was module-level) |
+| D3 | `_call_extraction_llm` | Signature harmonized to `conversations: list[str]` in both classes |
+
+### Updated files table
+
+Add the following to the "Files created / modified" table above:
+
+| Action | Path |
+| --- | --- |
+| CREATE | `backend/adjents/errors.py` |
+| CREATE | `backend/adjents/utils/__init__.py` |
+| CREATE | `backend/adjents/utils/agent_context.py` |

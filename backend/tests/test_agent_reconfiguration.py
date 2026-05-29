@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from adjents.agents.models import AgentStatus
 from adjents.agents.reconfiguration import AgentReconfiguration
 from adjents.db.tables import AgentSpecTable, AgentStateTable, MessageTable
+from adjents.errors import TeamSetupError
 from adjents.llm.anthropic_client import AnthropicClient
 from adjents.prompts.loader import PromptLoader
 
@@ -143,3 +144,20 @@ async def test_leaf_agent_no_subtree_context(
     user_msgs = [m for m in messages if m.from_agent == "user"]
     assert len(user_msgs) > 0
     assert "direct report" not in user_msgs[0].content.lower()
+
+
+@pytest.mark.asyncio
+async def test_extraction_raises_team_setup_error_after_max_retries(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    """V3: AgentReconfiguration must raise TeamSetupError on retry exhaustion."""
+    coo_id = mini_org["coo_id"]
+    mock_complete = AsyncMock(
+        side_effect=["Hello.", "bad json 1", "bad json 2", "bad json 3"]
+    )
+    reconf = _make_reconf(coo_id, async_session, stub_prompt_loader, mock_complete)
+    await reconf.start()
+    with pytest.raises(TeamSetupError):
+        await reconf.apply_changes()

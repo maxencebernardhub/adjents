@@ -16,7 +16,8 @@ from adjents.db.tables import (
     SkillTable,
     ValidationSessionTable,
 )
-from adjents.generator.team_setup import TeamSetupError, TeamSetupOrchestrator
+from adjents.errors import TeamSetupError
+from adjents.generator.team_setup import TeamSetupOrchestrator
 from adjents.llm.anthropic_client import AnthropicClient
 from adjents.prompts.loader import PromptLoader
 
@@ -532,6 +533,39 @@ async def test_complete_current_agent_coo_returns_summary(
     assert json.loads(coo_rec.navigation_stack) == []
 
 
+@pytest.mark.asyncio
+async def test_complete_current_agent_active_agent_id_is_root_when_subtree_done(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    """V1: active_agent_id must equal root_agent_id after subtree exhaustion."""
+    coo_id = mini_org["coo_id"]
+    n1_id = mini_org["n1_id"]
+    mock_complete = AsyncMock(
+        side_effect=[
+            "Hello, I'm Jordan.",
+            "Here is my summary.",
+            '{"agent_updates": []}',
+            "Hello, I'm Alex.",
+            "Hello, I'm Sam.",
+            "Finance team summary.",
+        ]
+    )
+    orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
+    session = await orch.start_session()
+    await orch.start_agent_conversation(session.id, coo_id)
+    await orch.complete_current_agent(session.id, coo_id)
+    await orch.validate_team(session.id, coo_id)
+    await orch.start_agent_conversation(session.id, n1_id)
+    await orch.complete_current_agent(session.id, n1_id)  # opens N-2
+    await orch.complete_current_agent(session.id, n1_id)  # N-2 leaf → final summary
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    n1_rec = next(r for r in rows if r.root_agent_id == n1_id)
+    assert json.loads(n1_rec.navigation_stack) == []
+    assert n1_rec.active_agent_id == n1_id
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -707,17 +741,25 @@ async def test_skip_agent_marks_record_skipped(
 
 
 @pytest.mark.asyncio
-async def test_skip_agent_returns_subtree_summary(
+async def test_skip_agent_returns_dict_with_summary_and_warning(
     async_session: AsyncSession,
     stub_prompt_loader: PromptLoader,
     mini_org: dict[str, str],
 ) -> None:
+    """G3: skip_agent must return dict[str, Any] with 'summary' and 'warning'."""
     coo_id = mini_org["coo_id"]
     mock_complete = AsyncMock(return_value="Hello.")
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     session = await orch.start_session()
     result = await orch.skip_agent(session.id, coo_id)
-    assert "Jordan" in str(result)
+    assert isinstance(result, dict)
+    assert "summary" in result
+    assert "warning" in result
+    assert isinstance(result["summary"], dict)
+    assert "agents" in result["summary"]
+    agent_names = [a["name"] for a in result["summary"]["agents"]]
+    assert "Jordan" in agent_names
+    assert coo_id in result["warning"]
 
 
 @pytest.mark.asyncio
@@ -735,6 +777,62 @@ async def test_skip_agent_reverts_active_agent_state_to_paused(
     state = await async_session.get(AgentStateTable, coo_id)
     assert state is not None
     assert state.status == AgentStatus.PAUSED
+
+
+@pytest.mark.asyncio
+async def test_skip_all_returns_dict_with_summary_and_warning(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    """G4: skip_all must return dict[str, Any] with 'summary' and 'warning'."""
+    mock_complete = AsyncMock(return_value="Hello.")
+    orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
+    session = await orch.start_session()
+    result = await orch.skip_all(session.id)
+    assert isinstance(result, dict)
+    assert "summary" in result
+    assert "warning" in result
+    assert isinstance(result["summary"], dict)
+    assert "agents" in result["summary"]
+    agent_names = [a["name"] for a in result["summary"]["agents"]]
+    assert "Jordan" in agent_names
+
+
+@pytest.mark.asyncio
+async def test_get_subtree_summary_none_returns_all_agents(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    """G5: get_subtree_summary(None) must return full org summary."""
+    mock_complete = AsyncMock(return_value="Hello.")
+    orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
+    result = await orch.get_subtree_summary(None)
+    assert isinstance(result, dict)
+    assert result["root_agent_id"] is None
+    assert "agents" in result
+    agent_names = {a["name"] for a in result["agents"]}
+    assert {"Jordan", "Alex", "Sam"} <= agent_names
+
+
+@pytest.mark.asyncio
+async def test_get_subtree_summary_agent_id_returns_subtree(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    """G5: get_subtree_summary(agent_id) returns that agent + descendants."""
+    n1_id = mini_org["n1_id"]
+    mock_complete = AsyncMock(return_value="Hello.")
+    orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
+    result = await orch.get_subtree_summary(n1_id)
+    assert isinstance(result, dict)
+    assert result["root_agent_id"] == n1_id
+    agent_names = {a["name"] for a in result["agents"]}
+    assert "Alex" in agent_names
+    assert "Sam" in agent_names
+    assert "Jordan" not in agent_names
 
 
 @pytest.mark.asyncio

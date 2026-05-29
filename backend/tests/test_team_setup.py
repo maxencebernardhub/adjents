@@ -3,10 +3,8 @@
 from datetime import UTC, datetime
 
 from adjents.agents.models import AgentSpec, Skill
-from adjents.generator.team_setup import (
-    _advance_traversal,
-    _build_agent_context_message,
-)
+from adjents.generator.team_setup import _advance_traversal
+from adjents.utils.agent_context import _build_agent_context_message
 
 
 def _make_spec(agent_id: str, name: str = "Agent") -> AgentSpec:

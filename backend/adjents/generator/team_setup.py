@@ -1,4 +1,4 @@
-"""Post-generation team setup: domain models, error type, and orchestration (Mode 1)."""
+"""Post-generation team setup: domain models and orchestration (Mode 1)."""
 
 import json
 import logging
@@ -20,11 +20,12 @@ from adjents.db.tables import (
     SkillTable,
     ValidationSessionTable,
 )
+from adjents.errors import TeamSetupError
 from adjents.llm.anthropic_client import AnthropicClient
 from adjents.prompts.loader import PromptLoader
+from adjents.utils.agent_context import _build_agent_context_message
 
 _log = logging.getLogger(__name__)
-_MAX_RETRIES = 3
 _FROZEN_FIELDS = frozenset({"domain", "level", "parent_id"})
 _INTERVAL_MIN = 300
 _INTERVAL_MAX = 3600
@@ -57,7 +58,16 @@ class AgentValidationRecord(BaseModel):
     validated_at: datetime | None
 
 
-class TeamSetupError(Exception): ...
+# Re-export for backward compatibility with external importers.
+__all__ = [
+    "AgentValidationRecord",
+    "AgentValidationStatus",
+    "TeamSetupError",
+    "TeamSetupOrchestrator",
+    "ValidationSession",
+    "_advance_traversal",
+    "_build_agent_context_message",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -98,95 +108,14 @@ def _advance_traversal(
                 return None, [], visited
 
 
-def _build_agent_context_message(
-    agent: AgentSpec,
-    skills: list[Skill],
-    direct_reports: list[AgentSpec],
-    reports_skills: dict[str, list[Skill]],
-) -> str:
-    """Build the first user message injecting agent data for intro/extraction prompts.
-
-    Every agent block includes agent_id (UUID) so the extraction LLM can reference it.
-    direct_reports is empty for leaf agents or the COO self-intro.
-    """
-    lines: list[str] = [
-        f"Agent ID: {agent.id}",
-        f"Name: {agent.name}",
-        f"Role: {agent.role_description}",
-        "",
-        "Responsibilities:",
-    ]
-    if agent.responsibilities:
-        lines += [f"- {r}" for r in agent.responsibilities]
-    else:
-        lines.append("(none)")
-
-    lines += ["", "Skills:"]
-    if skills:
-        for skill in skills:
-            lines.append(f"- {skill.name}: {skill.description}")
-            if skill.inputs:
-                lines.append(f"  Inputs: {', '.join(skill.inputs)}")
-            if skill.outputs:
-                lines.append(f"  Outputs: {', '.join(skill.outputs)}")
-            review = "Yes" if skill.requires_human_review else "No"
-            lines.append(f"  Requires human review: {review}")
-    else:
-        lines.append("(none)")
-
-    lines += [
-        "",
-        f"Work hours: {agent.work_hours or 'always active'}",
-        f"Scheduler interval: {agent.scheduler_interval_seconds} seconds",
-        f"Visual character: {agent.visual_character}",
-        "Escalation rules:",
-    ]
-    if agent.escalation_rules:
-        lines += [f"- {r}" for r in agent.escalation_rules]
-    else:
-        lines.append("(none)")
-
-    if direct_reports:
-        lines += ["", "Direct reports:"]
-        for report in direct_reports:
-            report_skills_list = reports_skills.get(report.id, [])
-            lines.append(
-                f"- Agent ID: {report.id} | {report.name} — {report.role_description}"
-            )
-            lines.append("  Responsibilities:")
-            if report.responsibilities:
-                lines += [f"  - {r}" for r in report.responsibilities]
-            else:
-                lines.append("  (none)")
-            if report_skills_list:
-                skill_parts = []
-                for s in report_skills_list:
-                    part = s.name
-                    if s.requires_human_review:
-                        part += " (requires review)"
-                    skill_parts.append(part)
-                lines.append(f"  Skills: {', '.join(skill_parts)}")
-            else:
-                lines.append("  Skills: (none)")
-            lines.append(f"  Work hours: {report.work_hours or 'always active'}")
-            lines.append(
-                f"  Scheduler interval: {report.scheduler_interval_seconds} seconds"
-            )
-            if report.escalation_rules:
-                lines.append("  Escalation rules:")
-                lines += [f"  - {r}" for r in report.escalation_rules]
-            else:
-                lines.append("  Escalation rules: (none)")
-
-    return "\n".join(lines)
-
-
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
 
 
 class TeamSetupOrchestrator:
+    _MAX_RETRIES: int = 3
+
     def __init__(
         self,
         client: AnthropicClient,
@@ -422,7 +351,7 @@ class TeamSetupOrchestrator:
             return intro_response
 
         else:
-            # Subtree exhausted — request summary from root conversation
+            # Subtree exhausted — request final summary from root agent (V1 fix)
             await self._set_agent_state(current_agent_id, AgentStatus.PAUSED)
 
             root_conv_id = record.conversation_ids[0]
@@ -448,7 +377,9 @@ class TeamSetupOrchestrator:
                 root_conv_id, root_msg_agent, "assistant", summary
             )
 
-            record.active_agent_id = None
+            # V1: active_agent_id = root_agent_id (not None) when delivering final
+            # summary
+            record.active_agent_id = root_agent_id
             record.navigation_stack = []
             record.visited_agent_ids = new_visited
             await self._save_record(record)
@@ -462,7 +393,7 @@ class TeamSetupOrchestrator:
     async def validate_team(self, session_id: str, root_agent_id: str) -> None:
         record = await self._load_record(session_id, root_agent_id)
         transcript = self._build_transcript(record)
-        updates = await self._call_extraction_llm(transcript)
+        updates = await self._call_extraction_llm([transcript])
 
         await self._apply_agent_updates(updates.get("agent_updates", []))
 
@@ -480,7 +411,7 @@ class TeamSetupOrchestrator:
     # Skip
     # ------------------------------------------------------------------
 
-    async def skip_agent(self, session_id: str, root_agent_id: str) -> str:
+    async def skip_agent(self, session_id: str, root_agent_id: str) -> dict[str, Any]:
         record = await self._load_record(session_id, root_agent_id)
 
         if record.active_agent_id is not None:
@@ -493,9 +424,19 @@ class TeamSetupOrchestrator:
 
         summary = await self.get_subtree_summary(root_agent_id)
         await self._maybe_go_live(session_id)
-        return summary
 
-    async def skip_all(self, session_id: str) -> None:
+        agent_name = (
+            summary["agents"][0]["name"] if summary["agents"] else root_agent_id
+        )
+        return {
+            "summary": summary,
+            "warning": (
+                f"Agent '{agent_name}' ({root_agent_id}) and their subtree were"
+                " skipped. No configuration changes will be applied."
+            ),
+        }
+
+    async def skip_all(self, session_id: str) -> dict[str, Any]:
         rows = (
             await self._session.exec(
                 select(AgentValidationRecordTable).where(
@@ -511,12 +452,44 @@ class TeamSetupOrchestrator:
         await self._session.commit()
         await self._go_live(session_id)
 
-    async def get_subtree_summary(self, root_agent_id: str) -> str:
-        root_row = await self._session.get(AgentSpecTable, root_agent_id)
+        full_summary = await self.get_subtree_summary(None)
+        return {
+            "summary": full_summary,
+            "warning": (
+                "All agents were skipped. The org went live with the generated"
+                " configuration."
+            ),
+        }
+
+    async def get_subtree_summary(self, agent_id: str | None) -> dict[str, Any]:
+        if agent_id is None:
+            all_rows = (await self._session.exec(select(AgentSpecTable))).all()
+            return {
+                "root_agent_id": None,
+                "agents": [
+                    {
+                        "id": r.id,
+                        "name": r.name,
+                        "level": r.level,
+                        "role_description": r.role_description,
+                    }
+                    for r in all_rows
+                ],
+            }
+
+        root_row = await self._session.get(AgentSpecTable, agent_id)
         if root_row is None:
-            return f"Agent {root_agent_id} not found."
-        lines = [f"Skipping {root_row.name} and their team."]
-        queue = [root_agent_id]
+            return {"root_agent_id": agent_id, "agents": []}
+
+        agents: list[dict[str, Any]] = [
+            {
+                "id": root_row.id,
+                "name": root_row.name,
+                "level": root_row.level,
+                "role_description": root_row.role_description,
+            }
+        ]
+        queue = [agent_id]
         while queue:
             parent_id = queue.pop(0)
             children = (
@@ -525,9 +498,16 @@ class TeamSetupOrchestrator:
                 )
             ).all()
             for child in children:
-                lines.append(f"- {child.name}")
+                agents.append(
+                    {
+                        "id": child.id,
+                        "name": child.name,
+                        "level": child.level,
+                        "role_description": child.role_description,
+                    }
+                )
                 queue.append(child.id)
-        return "\n".join(lines)
+        return {"root_agent_id": agent_id, "agents": agents}
 
     # ------------------------------------------------------------------
     # Go-live
@@ -584,6 +564,8 @@ class TeamSetupOrchestrator:
 
             for key, value in fields.items():
                 if key in _FROZEN_FIELDS:
+                    # G1: warn when frozen fields are dropped
+                    _log.warning("Dropping frozen field %r for agent %s", key, agent_id)
                     continue
                 if key == "visual_character" and value not in VALID_VISUAL_CHARACTERS:
                     _log.warning("Dropping invalid visual_character: %r", value)
@@ -625,10 +607,18 @@ class TeamSetupOrchestrator:
                     )
                 ).all()
                 remove_ids: list[str] = []
+                found_remove_names: set[str] = set()
                 for s in existing_skills:
                     if s.name in skills_to_remove:
                         remove_ids.append(s.id)
+                        found_remove_names.add(s.name)
                         await self._session.delete(s)
+                # G2: warn for skill names not found during removal
+                for name in skills_to_remove:
+                    if name not in found_remove_names:
+                        _log.warning(
+                            "Skill %r not found for removal on agent %s", name, agent_id
+                        )
                 current_skill_ids = [
                     i for i in current_skill_ids if i not in remove_ids
                 ]
@@ -637,6 +627,12 @@ class TeamSetupOrchestrator:
                 skill_name: str = su["name"]
                 skill_fields: dict[str, Any] = su.get("fields", {})
                 if not current_skill_ids:
+                    # G2: warn when no skills exist to update
+                    _log.warning(
+                        "Skill %r not found for update on agent %s (no skills)",
+                        skill_name,
+                        agent_id,
+                    )
                     continue
                 s_row = (
                     await self._session.exec(
@@ -653,6 +649,13 @@ class TeamSetupOrchestrator:
                         else:
                             setattr(s_row, k, v)
                     self._session.add(s_row)
+                else:
+                    # G2: warn when skill name not found for update
+                    _log.warning(
+                        "Skill %r not found for update on agent %s",
+                        skill_name,
+                        agent_id,
+                    )
 
             spec_row.skill_ids = json.dumps(current_skill_ids)
             self._session.add(spec_row)
@@ -675,11 +678,13 @@ class TeamSetupOrchestrator:
             parts.append("\n".join(lines))
         return "\n\n".join(parts)
 
-    async def _call_extraction_llm(self, transcript: str) -> dict[str, Any]:
+    async def _call_extraction_llm(self, conversations: list[str]) -> dict[str, Any]:
+        # D3: harmonised signature — takes list[str] like AgentReconfiguration
         extract_prompt = self._prompts.get("agent/extract_agent_adjustments")
+        transcript = "\n\n".join(conversations)
         messages: list[dict[str, str]] = [{"role": "user", "content": transcript}]
         last_error = ""
-        for attempt in range(_MAX_RETRIES):
+        for attempt in range(self._MAX_RETRIES):
             if attempt > 0:
                 messages.append(
                     {
@@ -697,7 +702,7 @@ class TeamSetupOrchestrator:
                 last_error = str(exc)
                 messages.append({"role": "assistant", "content": raw})
         raise TeamSetupError(
-            f"Extraction LLM failed after {_MAX_RETRIES} attempts: {last_error}"
+            f"Extraction LLM failed after {self._MAX_RETRIES} attempts: {last_error}"
         )
 
     # ------------------------------------------------------------------

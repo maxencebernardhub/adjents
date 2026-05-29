@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-05-28 (session 3) | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
+> Updated: 2026-05-29 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
 
 ---
 
@@ -453,12 +453,55 @@ Deviations (non-blocking, noted as tech debt):
 
 ---
 
+## Last session — 2026-05-29
+
+Spec compliance corrections applied to `feat/post-generation-team-setup`.
+
+### All 11 findings resolved (3 violations, 5 gaps, 3 deviations)
+
+**New shared modules created:**
+
+- `backend/adjents/errors.py` — `TeamSetupError` moved here from `team_setup.py`
+  (breaks the `generator/ → agents/` import direction V3+D2 required)
+- `backend/adjents/utils/__init__.py` + `backend/adjents/utils/agent_context.py` —
+  `_build_agent_context_message` moved here from `team_setup.py` (D2: no more
+  cross-direction import)
+
+**Code changes:**
+
+- V1: `complete_current_agent()` now sets `record.active_agent_id = root_agent_id`
+  (not `None`) before delivering the final team summary
+- V3: `AgentReconfiguration._call_extraction_llm` now raises `TeamSetupError` instead
+  of `ValueError` on retry exhaustion
+- G1: `_log.warning("Dropping frozen field %r for agent %s", ...)` added to both
+  `_apply_agent_updates` copies
+- G2: `_log.warning(...)` added for skill-not-found (remove and update paths) in both files
+- G3: `skip_agent()` returns `dict[str, Any]` with `"summary"` and `"warning"` keys;
+  warning includes agent name and ID
+- G4: `skip_all()` returns `dict[str, Any]` with `"summary"` and `"warning"` keys
+- G5: `get_subtree_summary(agent_id: str | None)` — `None` now returns full org
+- D1: `_MAX_RETRIES: int = 3` as class attribute in both `TeamSetupOrchestrator` and
+  `AgentReconfiguration` (was module-level)
+- D3: `_call_extraction_llm(conversations: list[str])` signature harmonized
+
+**Documentation updated:**
+
+- `docs/specs/2026-05-27-post-generation-team-setup.md` — V2: COO intro rule corrected
+  to reflect ADR 0006 (agents present direct reports); new shared modules added
+- `docs/reviews/2026-05-28-post-generation-team-setup-spec-compliance.md` — all findings
+  updated to ✅, verdict changed to "Fully compliant (post-corrections)"
+
+**Test count:** 244 tests passing (238 → +6 new), ruff + mypy --strict clean.
+
+**Stopped at:** all spec compliance corrections done — ready for Phase 6 (code review)
+
+---
+
 ## Next steps
 
-1. Address spec compliance findings (V1, V2, V3, G1–G5)
-2. Phase 6: code review (`code-reviewer` subagent)
-3. Commit + merge `feat/post-generation-team-setup` into main
-4. Next feature: LLM Router
+1. Phase 6: code review (`code-reviewer` subagent)
+2. Commit + merge `feat/post-generation-team-setup` into main
+3. Next feature: LLM Router
 
 ---
 

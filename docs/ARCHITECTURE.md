@@ -17,7 +17,7 @@ adjents/
 ├── backend/
 │   ├── adjents/
 │   │   ├── agents/              # AgentSpec, agent lifecycle, agent loop
-│   │   ├── generator/           # Generator Agent: interview + org generation
+│   │   ├── generator/           # Generator Agent: interview + org generation + team setup
 │   │   ├── messaging/           # Async message bus between agents
 │   │   ├── memory/              # Per-agent vector store + global KB (Chroma)
 │   │   ├── router/              # LLM routing logic (local vs cloud)
@@ -27,8 +27,10 @@ adjents/
 │   │   ├── deliverables/        # Deliverable writing and indexing
 │   │   ├── api/                 # FastAPI routes + WebSocket handlers
 │   │   ├── db/                  # SQLite models + migrations (via SQLModel)
+│   │   ├── utils/               # Shared helpers (agent_context, etc.)
+│   │   ├── errors.py            # Application-level error classes (TeamSetupError, etc.)
 │   │   └── prompts/             # All prompts as .md files, loaded at runtime
-│   │       ├── agent/           # think_and_act, memory_summary
+│   │       ├── agent/           # intro, extract_agent_adjustments, think_and_act, memory_summary
 │   │       ├── coo/             # daily_planning
 │   │       └── generator/       # interview, org_generation, extract_business_context
 │   ├── scripts/                 # Manual smoke tests (require API keys, not run by CI)

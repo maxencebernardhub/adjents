@@ -1,6 +1,6 @@
 # Feature: Post-Generation Team Setup
 
-> Spec date: 2026-05-27 | Updated: 2026-05-28 | Status: Validated | Next: Implementation Plan
+> Spec date: 2026-05-27 | Updated: 2026-05-29 | Status: Validated | Next: Code Review
 
 ---
 
@@ -44,11 +44,12 @@ surfaces agent reconfiguration.
   the agent's opening message. If the record was already `in_progress`, the
   conversation history is restored from `active_conversation_id` and the agent
   produces a "conversation resumed" continuation message.
-- **COO specificity**: the COO presents only its own configuration (role,
+- **COO specificity**: the COO presents its own configuration (role,
   responsibilities, skills, work hours, scheduler interval, visual character,
-  escalation rules). It does **not** introduce the N-1 agents as its team — each
-  N-1 has its own `AgentValidationRecord` and will be met separately. COO record:
-  `navigation_stack = [coo_id]`, `visited_agent_ids = []`.
+  escalation rules) **and** introduces its direct reports (N-1 agents) in the
+  opening message, consistent with ADR 0006 and `prompts/agent/intro.md`. Each N-1
+  has its own `AgentValidationRecord` and will be met separately in a dedicated
+  conversation. COO record: `navigation_stack = [coo_id]`, `visited_agent_ids = []`.
 - For N-1 root agents, the orchestrator traverses the subtree depth-first: after
   the root agent's intro, the first unvisited direct report takes over; after each
   sub-agent is done, control returns to its parent; when all descendants are
@@ -320,7 +321,10 @@ must produce a valid JSON object even when no changes were requested:
 
 | File | Description |
 | --- | --- |
-| `backend/adjents/generator/team_setup.py` | `ValidationSession`, `AgentValidationRecord`, `AgentValidationStatus`, `TeamSetupError`, `TeamSetupOrchestrator` (Mode 1) |
+| `backend/adjents/errors.py` | `TeamSetupError` — shared application error class |
+| `backend/adjents/utils/__init__.py` | Package init for shared utilities |
+| `backend/adjents/utils/agent_context.py` | `_build_agent_context_message` — shared context message builder (used by both modes) |
+| `backend/adjents/generator/team_setup.py` | `ValidationSession`, `AgentValidationRecord`, `AgentValidationStatus`, `TeamSetupOrchestrator` (Mode 1) |
 | `backend/adjents/agents/reconfiguration.py` | `AgentReconfiguration` (Mode 2) |
 | `backend/adjents/prompts/agent/intro.md` | Agent intro + discussion system prompt (both modes) |
 | `backend/adjents/prompts/agent/extract_agent_adjustments.md` | Extraction prompt; outputs the schema above |
