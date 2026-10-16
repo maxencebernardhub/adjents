@@ -1,32 +1,41 @@
 # Project State
 
-> Updated: 2026-05-29 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
+> Updated: 2026-10-16 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
 
 ---
 
 ## Milestone progress — v0.1
 
-| Feature | Spec | Impl | Tests |
-| --- | :---: | :---: | :---: |
-| Project scaffold | ✅ | ✅ | — |
-| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | ✅ | ✅ |
-| Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
-| Generator Agent — interview | ✅ | ✅ | ✅ |
-| Generator Agent — org generation | ✅ | ✅ | ✅ |
-| Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ |
-| LLM router | — | ✅ (Anthropic only) | ✅ |
-| LLM clients (Ollama, Anthropic, OpenAI, Google) | — | ✅ (Anthropic only) | ✅ |
-| Async message dispatcher | — | — | — |
-| Agent loop (asyncio, pause/resume, work hours) | — | — | — |
-| Memory layer (Chroma — per-agent + global KB) | — | — | — |
-| Deliverables output (`data/outputs/`) | — | — | — |
-| FastAPI app + REST routes | — | — | — |
-| WebSocket handler (real-time agent state) | — | — | — |
-| Onboarding view (React) | — | — | — |
-| 2D workspace (PixiJS) | — | — | — |
-| Org chart view (React) | — | — | — |
-| Blocking questions UI | — | — | — |
-| Deliverables view (React) | — | — | — |
+Legend: ✅ done · ⏳ in progress · ⚠️ done with open findings · — to do · n/a not applicable.
+"TDD" = tests and code written together in red → green cycles. "Step N" refers to
+the Next steps plan below.
+
+| Feature | Feature Brief | Implementation Plan | TDD (tests → code) | Smoke Test | Spec Review | Code Review | Merged |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Project scaffold | n/a | n/a | n/a | n/a | n/a | n/a | ✅ |
+| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | n/a | n/a | ✅ | n/a | — (step 4) | — (step 4) | ✅ |
+| Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | — (step 4) | — (step 4) | ✅ |
+| Generator Agent — interview | ✅ | ✅ | ✅ | ✅ | — (step 6) | ✅ ¹ | ✅ |
+| Generator Agent — org generation | ✅ | ✅ | ✅ | ✅ | — (step 7) | ✅ ¹ | ✅ |
+| Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (step 8) | ⏳ (step 0) |
+| Task entity (per-agent task queue) | — (step 5) | — | — | n/a | — | — | — |
+| LLM router | — (step 10) | — | ⏳ (Anthropic only) | — | — | — | — |
+| LLM clients (Ollama, Anthropic, OpenAI, Google) | — (step 10) | — | ⏳ (Anthropic only) | — | — | — | — |
+| Async message dispatcher | — | — | — | — | — | — | — |
+| Agent loop (asyncio, pause/resume, work hours) | — | — | — | — | — | — | — |
+| Memory layer (Chroma — per-agent + global KB) | — | — | — | — | — | — | — |
+| Deliverables output (`data/outputs/`) | — | — | — | — | — | — | — |
+| FastAPI app + REST routes | — | — | — | — | — | — | — |
+| WebSocket handler (real-time agent state) | — | — | — | — | — | — | — |
+| Onboarding view (React) | — | — | — | — | — | — | — |
+| 2D workspace (PixiJS) | — | — | — | — | — | — | — |
+| Org chart view (React) | — | — | — | — | — | — | — |
+| Blocking questions UI | — | — | — | — | — | — | — |
+| Deliverables view (React) | — | — | — | — | — | — | — |
+
+¹ Informal subagent review in May 2026, no written report. A full written code review
+is re-run during the walkthrough step, since the code will change significantly
+(SDK upgrade, Claude 5.5 migration, file splits).
 
 ---
 
@@ -39,6 +48,9 @@
 | `uv sync` (backend deps) | ✅ |
 | `pnpm install` (frontend deps) | ✅ |
 | Ollama running + model pulled (`qwen3.5:9b`) | ✅ |
+| `backend/.venv` rebuilt after project move out of Dropbox (2026-10-16) | ✅ |
+| VS Code workspace settings: interpreter pinned, terminal venv activation off (2026-10-16) | ✅ |
+| Ollama update + local model review | — (step 10) |
 
 ---
 
@@ -497,20 +509,280 @@ Spec compliance corrections applied to `feat/post-generation-team-setup`.
 
 ---
 
+## Last session — 2026-06-02 (logged retroactively)
+
+- Phase 6 code review run by the `code-reviewer` subagent:
+  `docs/reviews/2026-05-29-post-generation-team-setup-code-review.md`
+  — verdict **changes requested**: 2 blockers (B1 silent JSON corruption of
+  `responsibilities` / `escalation_rules` in `_apply_agent_updates`; B2
+  `team_setup.py` at 839 lines), 5 warnings (A1–A5), 3 notes (N1–N3). Not addressed yet.
+- `fc90cb3`: frontend lint fix (non-null assertion removed, `vite.config.ts` excluded
+  from ESLint).
+
+**Stopped at:** code review written, findings not addressed, branch not merged.
+
+---
+
+## Last session — 2026-10-16
+
+Re-entry session after a ~4.5-month break. Goal: restore context, audit the repo state,
+and agree on a detailed, step-by-step action plan.
+
+### Findings
+
+- `PROJECT_STATE.md` was stale: the 2026-06-02 code review and its open findings were
+  not recorded (now logged above).
+- **Broken local environment**: the project was moved from Dropbox to `~/dev/adjents`.
+  Python venvs are not relocatable — entry-point scripts in `backend/.venv/bin/` kept
+  absolute shebangs to the old path → `uv run pytest` failed and mypy reported 57
+  import errors. In addition, the VS Code Python extension and the Claude Code
+  extension injected a stale `VIRTUAL_ENV` into integrated terminals.
+- **Pre-existing frontend check failures** (present on main since scaffold `af912bc`):
+  Prettier flags `pnpm-lock.yaml` / `pnpm-workspace.yaml` (no `.prettierignore`);
+  `vitest run` fails with "No test files found"; `tsc --noEmit` fails on the
+  `./index.css` side-effect import (missing Vite client types under TypeScript 6).
+- **Architecture gap**: VISION §3.3 and ARCHITECTURE §5 (agent loop step 4) rely on a
+  per-agent task queue, but no `Task` entity exists in the models, tables or
+  ARCHITECTURE §3.
+- **ADR 0007 rationale inaccurate**: in the installed SDK (`anthropic` 0.103.1),
+  `MODEL_NONSTREAMING_TOKENS` only lists Opus 4.0 / 4.1. The constraint that actually
+  applies to every model is the SDK's expected-duration check (`3600 × max_tokens /
+  128000` s > 600 s ⇒ `ValueError`, i.e. non-streaming fails above ~21,333
+  `max_tokens`). The decision (always stream) stays valid; the rationale must be fixed.
+- Hard-coded model IDs (`claude-opus-4-7`, `claude-sonnet-4-6`) are a generation behind
+  (current: Opus 5.5 / Sonnet 5.5). Dependencies are ~5 months old.
+
+### Done
+
+- `backend/.venv` deleted and rebuilt from `uv.lock` (`uv sync --all-groups`).
+- VS Code workspace settings (`.vscode/settings.json`, git-ignored):
+  `python.defaultInterpreterPath` pinned to `backend/.venv`,
+  `python.terminal.activateEnvironment: false`, `claudeCode.usePythonEnvironment: false`
+  — `uv run` is the single way to run Python tools.
+- Backend checks green on `feat/post-generation-team-setup`: ruff ✅, mypy --strict ✅,
+  244 tests ✅.
+- Milestone table restructured (Feature Brief / Implementation Plan / TDD / Smoke Test /
+  Spec Review / Code Review / Merged).
+- Detailed action plan agreed (see Next steps).
+
+### Decisions
+
+- **One branch open at a time**: each step = branch from up-to-date main → work → PR →
+  merge → delete branch. No parallel branches ⇒ no merge conflicts by construction.
+- **Merges via GitHub PRs** ("Create a merge commit", consistent with earlier merges).
+- `feat/post-generation-team-setup` is merged with its known review findings documented
+  in the PR (no runtime caller exists yet — only the smoke script); fixes in step 8.
+- **File size rule** (to be written into CLAUDE.md in step 1): source modules — 300
+  lines = review trigger ("more than one responsibility?"), 500 lines = hard limit,
+  docstrings included; tests — one test file per source module; smoke scripts — no cap,
+  but shared helpers extracted to `scripts/_common.py` beyond 400 lines; docs — no limit.
+- **No retroactive Feature Brief / Implementation Plan** for core models + DB layer —
+  their decisions already live in ARCHITECTURE §3 and ADRs 0002–0004.
+- **Retroactive spec + code reviews** for core models, DB layer, interview and org
+  generation (steps 4, 6, 7).
+- **Docstrings**: Google style; module docstring = purpose + place in the flow + entry
+  points + related ADRs; comments explain *why*, not *what*. Written by Claude,
+  explained to and validated by the user.
+- Technical explanations (agents as data, message passing, scheduler choice, frontend
+  tooling) are documented in ARCHITECTURE.md / READMEs / config comments — CLAUDE.md
+  only gets one-line pointers to keep the context window small.
+- Local model choice (Ollama) is revisited in step 10, with fresh research and a mini
+  benchmark on the target machine (Apple M4 Pro, 24 GB RAM).
+
+**Stopped at:** step 0.4 — PROJECT_STATE updated; next: commit, PR, merge (step 0.5).
+
+---
+
 ## Next steps
 
-1. Phase 6: code review (`code-reviewer` subagent)
-2. Commit + merge `feat/post-generation-team-setup` into main
-3. Next feature: LLM Router
+Each step follows the same cycle unless stated otherwise: create the branch from an
+up-to-date main → work → `make lint && make typecheck && make test` → update
+PROJECT_STATE (Last session + this checklist) → commit → GitHub PR → merge commit →
+delete the branch (local + remote) → `git checkout main && git pull`.
+
+Walkthrough steps (4, 6, 7, 8) follow this sub-sequence: (a) read the **tests first**
+(they are the executable spec), then the source, then the prompts, then run the smoke
+script; (b) add docstrings and comments; (c) spec review (`spec-reviewer` subagent,
+report in `docs/reviews/`); (d) code review (`code-reviewer` subagent, report in
+`docs/reviews/`); (e) review findings together and fix them with TDD.
+
+### Step 0 — Repair the environment and merge feature 3
+
+Branch: `feat/post-generation-team-setup`
+
+- [x] 0.1 Delete and rebuild `backend/.venv` (`uv sync --all-groups`)
+- [x] 0.2 VS Code workspace settings fixed; terminals and Claude Code restarted
+- [x] 0.3 Backend checks green (ruff, mypy --strict, 244 tests); frontend failures
+  confirmed as pre-existing on main (fixed in step 2)
+- [x] 0.4 Update PROJECT_STATE (milestone table, Last session, this plan)
+- [ ] 0.5 Commit `docs(state)`, push, open PR with a "Known issues" section (B1, B2,
+  A1–A5 → step 8; pre-existing frontend check failures → step 2)
+- [ ] 0.6 Merge (merge commit), delete the branch, pull main
+
+### Step 1 — Document architecture rationale
+
+Branch: `docs/architecture-rationale`
+
+- [ ] 1.1 ARCHITECTURE: new section "Agents are data, not code" — what agent-as-code
+  would mean, why it is impossible here (agents are generated at runtime), impact
+  (one generic loop, reconfiguration = DB update), trade-offs (behavior must be
+  expressible through fields + prompts + skills)
+- [ ] 1.2 ARCHITECTURE §4 Messaging: typed message passing explained (`Message`
+  Pydantic model, mailbox analogy), `MessageDispatcher` role (not implemented yet),
+  why (concurrent asyncio tasks, deadlocks, logging/replay, isolated tests), trade-offs
+  (indirection, request/response correlation via `parent_message_id`, async debugging,
+  in-memory queue ⇒ persist messages), Redis path for a hosted version
+- [ ] 1.3 ARCHITECTURE §5: what APScheduler and Celery are, impact of the asyncio
+  choice, trade-offs (single process, no multi-machine scaling, hand-written calendar
+  rules), what would change for a hosted multi-tenant version
+- [ ] 1.4 CLAUDE.md: one-line pointer to ARCHITECTURE for each architecture rule;
+  file size rule; docstring convention
+
+### Step 2 — Update dependencies
+
+Branch: `chore/deps-update`
+
+- [ ] 2.1 Backend: bump every dependency in `pyproject.toml` to the latest stable
+  version (`anthropic`, `openai`, `google-genai`, `pydantic`, `sqlmodel`, `chromadb`,
+  `fastapi`, dev tools…); `uv lock --upgrade` + `uv sync --all-groups`
+- [ ] 2.2 Check PyPI for a 1.x major release of the `anthropic` Python SDK; if
+  released, follow its migration guide (breaking changes)
+- [ ] 2.3 Frontend: bump dependencies; resolve tech debt ESLint 10 (`eslint.config.js`)
+  and Vite 8 (`vite.config.ts`)
+- [ ] 2.4 Fix pre-existing frontend check failures: `.prettierignore`
+  (`pnpm-lock.yaml`), Prettier format of `pnpm-workspace.yaml`, vitest
+  `passWithNoTests` (until real tests exist), `src/vite-env.d.ts` (Vite client types)
+- [ ] 2.5 Full checks green + run the 3 smoke scripts (real API calls — paid)
+
+### Step 3 — Migrate to the Claude 5.5 generation
+
+Branch: `chore/claude-5-5-migration`
+
+- [ ] 3.1 Choose models per role together (proposal: Generator → Opus 5.5;
+  team-setup conversations + extraction → Sonnet 5.5)
+- [ ] 3.2 `AnthropicClient`: explicit `effort` (Opus 5.5 default is `medium`), review
+  `max_tokens` now that thinking is always on, handle `stop_reason == "refusal"` and
+  server-side fallbacks, confirm no `temperature` / assistant prefill is sent
+- [ ] 3.3 Re-verify the non-streaming threshold in the upgraded SDK; fix the
+  `anthropic_client.py` docstring and ARCHITECTURE §2; **amend** ADR 0007 (rationale
+  correction — never delete)
+- [ ] 3.4 Update model IDs in `router/router.py` and the 3 smoke scripts
+- [ ] 3.5 Re-run the smoke tests (paid)
+
+### Step 4 — Walkthrough: foundations
+
+Branch: `refactor/walkthrough-foundations`
+
+- [ ] 4.1 Walkthrough: models (`agents/`, `messaging/`, `memory/`, `projects/`,
+  `deliverables/`, `generator/models.py`) + their tests
+- [ ] 4.2 Walkthrough: `db/` (`tables.py`, `convert.py`, `engine.py`) + tests
+- [ ] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
+  `router/router.py` + tests
+- [ ] 4.4 Docstrings + comments
+- [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004
+- [ ] 4.6 Code review
+- [ ] 4.7 Review findings together, fix with TDD
+
+### Step 5 — Task entity (per-agent task queue)
+
+Branch: `feat/task-entity` — full `/feature` workflow
+
+- [ ] 5.1 Brainstorming: lifecycle and statuses, priority and reordering (VISION §3.3),
+  requester, links to `AgentState` (`current_task_summary` → `current_task_id`?),
+  `BlockingQuestion`, `Deliverable`, `Project` (v0.2), retrieval queries
+- [ ] 5.2 ADR 0010
+- [ ] 5.3 Feature Brief + Implementation Plan
+- [ ] 5.4 TDD: Pydantic model + SQLModel table + convert functions + tests
+- [ ] 5.5 Update ARCHITECTURE §3 and §5 (agent loop step 4)
+- [ ] 5.6 Spec review + code review, fixes
+
+### Step 6 — Walkthrough: Generator Agent interview
+
+Branch: `refactor/walkthrough-interview`
+
+- [ ] 6.1 Walkthrough: `test_generator_interview.py` → `generator/interview.py` →
+  `prompts/generator/interview.md` + `extract_business_context.md` → run
+  `smoke_generator_interview.py`
+- [ ] 6.2 Tech debt: `resume()` N sequential SELECTs → single `WHERE id IN (...)`
+  query (TDD, test asserting the query count)
+- [ ] 6.3 Prompt audit for Claude 5.5 (patterns written for 4.x models)
+- [ ] 6.4 Docstrings + comments
+- [ ] 6.5 Spec review (against the 2026-05-20 Feature Brief) + code review, fixes
+
+### Step 7 — Walkthrough: Generator Agent org generation
+
+Branch: `refactor/walkthrough-org-generation`
+
+- [ ] 7.1 Walkthrough: `test_generator_org_generation.py` →
+  `generator/org_generation.py` → `prompts/generator/org_generation.md` → run
+  `smoke_generator_org.py`
+- [ ] 7.2 Split `org_generation.py` (435 lines) into a package by responsibility
+  (draft: `models.py`, `validation.py`, `parsing.py`, `generator.py`); split the test
+  file accordingly (one test file per module)
+- [ ] 7.3 Prompt audit for Claude 5.5
+- [ ] 7.4 Docstrings + comments
+- [ ] 7.5 Spec review (against the 2026-05-22 Feature Brief) + code review, fixes
+
+### Step 8 — Walkthrough: post-generation team setup + code review fixes
+
+Branch: `refactor/walkthrough-team-setup`
+
+- [ ] 8.1 Walkthrough: team setup tests → `generator/team_setup.py`,
+  `agents/reconfiguration.py`, `utils/agent_context.py` → prompts `agent/intro.md` +
+  `extract_agent_adjustments.md` → run `smoke_team_setup.py`
+- [ ] 8.2 B1 (TDD — failing test first): JSON-serialize `responsibilities` /
+  `escalation_rules` in `_apply_agent_updates`
+- [ ] 8.3 B2: split `team_setup.py` (839 lines) into a package; extract the logic
+  shared with `reconfiguration.py` (extraction LLM call + `_apply_agent_updates` +
+  persistence helpers) into one module — removes the ~70 duplicated lines; split
+  `test_team_setup_orchestrator.py` (1,297 lines) accordingly
+- [ ] 8.4 Warnings A1–A5 (asserts as flow control, `validate_team` guard, circular
+  import risk, misleading resumability, `reply()` before `start()` guard)
+- [ ] 8.5 Notes N1–N3: decide together (fix or accept)
+- [ ] 8.6 Smoke scripts: extract shared helpers to `scripts/_common.py` if > 400 lines
+- [ ] 8.7 Docstrings + comments
+- [ ] 8.8 New code review on the result, fixes
+
+### Step 9 — Document frontend and tooling
+
+Branch: `docs/frontend-and-tooling`
+
+- [ ] 9.1 Comment config files: `tsconfig.json` (JSONC — every compiler option,
+  e.g. `isolatedModules`), `vite.config.ts`, `eslint.config.js`,
+  `pnpm-workspace.yaml`, `backend/pyproject.toml`
+- [ ] 9.2 `frontend/README.md`: dependency table (`package.json` accepts no comments),
+  Python ↔ JS tooling equivalences, directory layout rationale
+- [ ] 9.3 ARCHITECTURE §11: data flow `api/ → state/ → views/ + components/ |
+  workspace/`, layer-based vs feature-based layout trade-off
+
+### Step 10 — LLM Router
+
+Branch: `feat/llm-router` — full `/feature` workflow
+
+- [ ] 10.1 Brainstorming: routing rules (complexity, `sensitivity=high` → local),
+  concurrency, startup staggering (ARCHITECTURE §8)
+- [ ] 10.2 OpenAI, Google and Ollama clients; model choice for each provider
+- [ ] 10.3 Local models: update Ollama; research recent models suited to 24 GB RAM;
+  mini benchmark on Adjents tasks (JSON validity, instruction following, tokens/s);
+  choose the embedding model for Chroma; remove unused local models
+- [ ] 10.4 Feature Brief → Plan → TDD → smoke → spec review → code review → PR
 
 ---
 
 ## Technical debt
 
-- `eslint.config.js`: written against ESLint 9 API — may need adjustments for ESLint 10 after `pnpm install`
+- `eslint.config.js`: written against ESLint 9 API — may need adjustments for ESLint 10
+  after `pnpm install` → **step 2.3**
 - `vite.config.ts`: written against Vite 6 API — to validate against installed Vite 8
+  → **step 2.3**
+- Pre-existing frontend check failures (Prettier on pnpm files, vitest with no test
+  files, `tsc` on the CSS side-effect import) → **step 2.4**
+- ADR 0007 rationale inaccurate (see Last session 2026-10-16) → **step 3.3**
+- No `Task` entity despite the per-agent task queue in VISION §3.3 / ARCHITECTURE §5
+  → **step 5**
 - `resume()` in `GeneratorInterview`: N sequential SELECTs (one per message) — acceptable
-  for v0.1 short conversations, replace with `WHERE id IN (...)` if conversations grow
+  for v0.1 short conversations, replace with `WHERE id IN (...)` → **step 6.2**
+- Code review findings on team setup (B1, B2, A1–A5, N1–N3) → **step 8**
 - `work_hours` in `AgentSpec`: single daily window (`"HH:MM-HH:MM"`) applied uniformly
   every day — no day-of-week granularity, no multi-window support; per-agent independent
   schedules ARE supported (each `AgentSpec` has its own field); day-of-week variation
@@ -546,3 +818,7 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-27 | Direct reconfiguration v0.1; parent-mediated governance for `work_hours`/`responsibilities`/`role_description` in v0.2 (ADR 0009) | Skills are descriptive only in v0.1 (no execution barrier); governance deferred until agents are autonomous |
 | 2026-05-28 | `_apply_agent_updates` + `_call_extraction_llm` duplicated between `TeamSetupOrchestrator` and `AgentReconfiguration` | Avoids cross-direction `generator/ → agents/` dependency at v0.1 scale; accepted per ADR 0008 |
 | 2026-05-28 | `sqlmodel.select` required (not `sqlalchemy.select`) for typed SQLModel `exec()` results | `sqlalchemy.select` returns `Row` tuples; `sqlmodel.select` returns scalar model instances |
+| 2026-10-16 | One branch open at a time; every merge through a GitHub PR (merge commit) | No parallel branches ⇒ no merge conflicts; PR history doubles as portfolio evidence |
+| 2026-10-16 | File size rule: source 300 lines = review trigger, 500 = hard limit (docstrings included); one test file per source module | Line count is a proxy for single responsibility; must not push towards stripping documentation |
+| 2026-10-16 | `Task` becomes a first-class persisted entity (ADR 0010 in step 5) | Task lifecycle (status, priority, requester, links) does not belong in the hot, frequently broadcast `AgentState` record |
+| 2026-10-16 | `uv run` is the only way to run Python tools; IDE venv auto-activation disabled | A stale activated venv broke the environment after the project move |
