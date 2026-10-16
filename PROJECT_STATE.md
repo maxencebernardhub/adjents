@@ -589,7 +589,14 @@ and agree on a detailed, step-by-step action plan.
 - Local model choice (Ollama) is revisited in step 10, with fresh research and a mini
   benchmark on the target machine (Apple M4 Pro, 24 GB RAM).
 
-**Stopped at:** step 0.4 — PROJECT_STATE updated; next: commit, PR, merge (step 0.5).
+- PR #1 opened; its frontend CI job failed on the pre-existing Prettier issue. The
+  GitHub Actions CI (`.github/workflows/ci.yml`, from the scaffold) had in fact been
+  red on main since 2026-06-02 (ESLint, fixed by `fc90cb3`). Step 2.4 was moved to
+  step 0.5b so that main is green before the step-by-step workflow starts: the 4 CI
+  frontend commands (`pnpm lint`, `format:check`, `typecheck`, `test --run`) now
+  pass locally.
+
+**Stopped at:** step 0.6 — waiting for PR #1 CI to go green, then merge.
 
 ---
 
@@ -615,9 +622,14 @@ Branch: `feat/post-generation-team-setup`
 - [x] 0.3 Backend checks green (ruff, mypy --strict, 244 tests); frontend failures
   confirmed as pre-existing on main (fixed in step 2)
 - [x] 0.4 Update PROJECT_STATE (milestone table, Last session, this plan)
-- [ ] 0.5 Commit `docs(state)`, push, open PR with a "Known issues" section (B1, B2,
-  A1–A5 → step 8; pre-existing frontend check failures → step 2)
-- [ ] 0.6 Merge (merge commit), delete the branch, pull main
+- [x] 0.5 Commit `docs(state)`, push, open PR #1 with a "Known issues" section (B1, B2,
+  A1–A5 → step 8)
+- [x] 0.5b Fix the pre-existing frontend CI failures (moved here from step 2.4 so that
+  main is green before the step-by-step workflow starts — the GitHub Actions CI on
+  main had been red since 2026-06-02): `.prettierignore` (pnpm-owned files),
+  `src/vite-env.d.ts` (Vite client types), vitest `--passWithNoTests` until real
+  frontend tests exist
+- [ ] 0.6 PR #1 CI green → merge (merge commit), delete the branch, pull main
 
 ### Step 1 — Document architecture rationale
 
@@ -649,9 +661,7 @@ Branch: `chore/deps-update`
   released, follow its migration guide (breaking changes)
 - [ ] 2.3 Frontend: bump dependencies; resolve tech debt ESLint 10 (`eslint.config.js`)
   and Vite 8 (`vite.config.ts`)
-- [ ] 2.4 Fix pre-existing frontend check failures: `.prettierignore`
-  (`pnpm-lock.yaml`), Prettier format of `pnpm-workspace.yaml`, vitest
-  `passWithNoTests` (until real tests exist), `src/vite-env.d.ts` (Vite client types)
+- [x] 2.4 ~~Fix pre-existing frontend check failures~~ — done in step 0.5b
 - [ ] 2.5 Full checks green + run the 3 smoke scripts (real API calls — paid)
 
 ### Step 3 — Migrate to the Claude 5.5 generation
@@ -775,8 +785,6 @@ Branch: `feat/llm-router` — full `/feature` workflow
   after `pnpm install` → **step 2.3**
 - `vite.config.ts`: written against Vite 6 API — to validate against installed Vite 8
   → **step 2.3**
-- Pre-existing frontend check failures (Prettier on pnpm files, vitest with no test
-  files, `tsc` on the CSS side-effect import) → **step 2.4**
 - ADR 0007 rationale inaccurate (see Last session 2026-10-16) → **step 3.3**
 - No `Task` entity despite the per-agent task queue in VISION §3.3 / ARCHITECTURE §5
   → **step 5**
