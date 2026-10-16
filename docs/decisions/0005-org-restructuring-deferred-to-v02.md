@@ -1,7 +1,7 @@
 # ADR 0005 — Org Restructuring: Deferred to v0.2, Generator Agent + N-1 Consultation
 
 **Date**: 2026-05-22
-**Status**: Accepted
+**Status**: Accepted — Amended 2026-05-28 (direct reconfiguration in v0.1)
 
 ---
 
@@ -63,6 +63,26 @@ The restructuring flow (v0.2):
    remove / update)
 5. User validates the proposal
 6. Generator Agent applies the changes
+
+### Direct reconfiguration in v0.1 (amendment — 2026-05-28)
+
+The "micro-adjustments via parent agent" approach described below requires agents to
+have executable tool calls (Python sandbox) — a v0.2 capability. However, the
+conversation + extraction infrastructure built for the post-generation team setup
+(ADR 0008) is already in place in v0.1.
+
+**`AgentReconfiguration`** (`adjents/agents/reconfiguration.py`) allows the user to
+talk directly to any agent and modify all non-structural fields: `name`,
+`role_description`, `responsibilities`, `work_hours`, `scheduler_interval_seconds`,
+`visual_character`, `escalation_rules`, and skills (add/update/remove).
+
+Structural fields (`domain`, `level`, `parent_id`) remain frozen in v0.1 — any
+mutation attempt is silently dropped. See ADR 0009 for the full scope.
+
+In v0.2, the parent-mediated path will add governance on top: for non-COO agents,
+changes to `work_hours`, `responsibilities`, and `role_description` will require the
+parent agent to validate the change within its team context. The direct reconfiguration
+mechanism itself remains; it is the governance layer that changes.
 
 ### Micro-adjustments: parent agent owns team configuration (v0.2)
 

@@ -35,4 +35,10 @@ uv run python scripts/smoke_generator_interview.py
 
 # Smoke test: Generator Agent org generation (requires ANTHROPIC_API_KEY)
 uv run python scripts/smoke_generator_org.py
+
+# Smoke test: Post-generation team setup + direct agent reconfiguration
+# Mock mode (default): automated, no API key required
+uv run python scripts/smoke_team_setup.py
+# Real mode: live LLM calls, prints conversation to stdout
+uv run python scripts/smoke_team_setup.py --real
 ```

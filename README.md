@@ -20,6 +20,12 @@ act without being told what to do at every step.
 
 - **Conversational onboarding** — Generator Agent conducts a deep interview and
   produces a full persistent agent organization tailored to your business
+- **Post-generation team setup** — before agents go live, the user meets each agent
+  one-on-one; each agent presents itself and can be adjusted; changes are applied at
+  validation time via a single LLM extraction call
+- **Direct agent reconfiguration** — after go-live, open a conversation with any agent
+  to rename it, update its responsibilities, adjust skills, or change work hours;
+  structural changes (domain, hierarchy) are deferred to v0.2
 - **Autonomous agent loop** — agents wake up on a configurable schedule, reason
   about their objectives, and act without waiting for instructions
 - **2D RPG workspace** — a house-style interface where each agent is a named

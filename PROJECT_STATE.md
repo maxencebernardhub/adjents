@@ -1,32 +1,41 @@
 # Project State
 
-> Updated: 2026-05-27 | Branch: main | Milestone: v0.1 — MVP
+> Updated: 2026-10-16 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
 
 ---
 
 ## Milestone progress — v0.1
 
-| Feature | Spec | Impl | Tests |
-| --- | :---: | :---: | :---: |
-| Project scaffold | ✅ | ✅ | — |
-| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | — | ✅ | ✅ |
-| Database layer (SQLModel + SQLite) | — | ✅ | ✅ |
-| Generator Agent — interview | ✅ | ✅ | ✅ |
-| Generator Agent — org generation | ✅ | ✅ | ✅ |
-| Post-generation team validation (user ↔ N-1 agents) | — | — | — |
-| LLM router | — | ✅ (Anthropic only) | ✅ |
-| LLM clients (Ollama, Anthropic, OpenAI, Google) | — | ✅ (Anthropic only) | ✅ |
-| Async message dispatcher | — | — | — |
-| Agent loop (asyncio, pause/resume, work hours) | — | — | — |
-| Memory layer (Chroma — per-agent + global KB) | — | — | — |
-| Deliverables output (`data/outputs/`) | — | — | — |
-| FastAPI app + REST routes | — | — | — |
-| WebSocket handler (real-time agent state) | — | — | — |
-| Onboarding view (React) | — | — | — |
-| 2D workspace (PixiJS) | — | — | — |
-| Org chart view (React) | — | — | — |
-| Blocking questions UI | — | — | — |
-| Deliverables view (React) | — | — | — |
+Legend: ✅ done · ⏳ in progress · ⚠️ done with open findings · — to do · n/a not applicable.
+"TDD" = tests and code written together in red → green cycles. "Step N" refers to
+the Next steps plan below.
+
+| Feature | Feature Brief | Implementation Plan | TDD (tests → code) | Smoke Test | Spec Review | Code Review | Merged |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Project scaffold | n/a | n/a | n/a | n/a | n/a | n/a | ✅ |
+| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | n/a | n/a | ✅ | n/a | — (step 4) | — (step 4) | ✅ |
+| Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | — (step 4) | — (step 4) | ✅ |
+| Generator Agent — interview | ✅ | ✅ | ✅ | ✅ | — (step 6) | ✅ ¹ | ✅ |
+| Generator Agent — org generation | ✅ | ✅ | ✅ | ✅ | — (step 7) | ✅ ¹ | ✅ |
+| Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (step 8) | ⏳ (step 0) |
+| Task entity (per-agent task queue) | — (step 5) | — | — | n/a | — | — | — |
+| LLM router | — (step 10) | — | ⏳ (Anthropic only) | — | — | — | — |
+| LLM clients (Ollama, Anthropic, OpenAI, Google) | — (step 10) | — | ⏳ (Anthropic only) | — | — | — | — |
+| Async message dispatcher | — | — | — | — | — | — | — |
+| Agent loop (asyncio, pause/resume, work hours) | — | — | — | — | — | — | — |
+| Memory layer (Chroma — per-agent + global KB) | — | — | — | — | — | — | — |
+| Deliverables output (`data/outputs/`) | — | — | — | — | — | — | — |
+| FastAPI app + REST routes | — | — | — | — | — | — | — |
+| WebSocket handler (real-time agent state) | — | — | — | — | — | — | — |
+| Onboarding view (React) | — | — | — | — | — | — | — |
+| 2D workspace (PixiJS) | — | — | — | — | — | — | — |
+| Org chart view (React) | — | — | — | — | — | — | — |
+| Blocking questions UI | — | — | — | — | — | — | — |
+| Deliverables view (React) | — | — | — | — | — | — | — |
+
+¹ Informal subagent review in May 2026, no written report. A full written code review
+is re-run during the walkthrough step, since the code will change significantly
+(SDK upgrade, Claude 5.5 migration, file splits).
 
 ---
 
@@ -39,6 +48,9 @@
 | `uv sync` (backend deps) | ✅ |
 | `pnpm install` (frontend deps) | ✅ |
 | Ollama running + model pulled (`qwen3.5:9b`) | ✅ |
+| `backend/.venv` rebuilt after project move out of Dropbox (2026-10-16) | ✅ |
+| VS Code workspace settings: interpreter pinned, terminal venv activation off (2026-10-16) | ✅ |
+| Ollama update + local model review | — (step 10) |
 
 ---
 
@@ -116,11 +128,11 @@
   - Single LLM call (global coherence over per-domain generation)
   - `visual_character` from predefined list injected into prompt
   - `AgentState` created in `generate()` alongside `AgentSpec` (no orphan invariant)
-  - `prompts/agent/intro.md` deferred to post-generation validation feature
+  - `prompts/agent/intro.md` deferred to post-generation team setup feature
   - Validation: structural invariants extracted as pure function + retry with LLM feedback
 - ADR 0005 created: org restructuring deferred to v0.2; Generator Agent orchestrates
   with N-1/N-2 consultation; micro-adjustments via parent agent (v0.2); upsert-safe `generate()`
-- ADR 0006 created: post-generation team validation; agents start `is_paused=True`;
+- ADR 0006 created: post-generation team setup; agents start `is_paused=True`;
   N-1 agents (not Generator Agent) conduct introduction conversations; skippable
 - `docs/VISION.md` updated: post-gen validation flow, restructuring flow, micro-adjustments,
   updated roadmap and scope
@@ -263,18 +275,522 @@ Code review of `feat/generator-org-generation` + two fixes applied:
 
 ---
 
+## Last session — 2026-05-27 (continued)
+
+Feature Brief written and validated for Post-generation team setup (user ↔ agents).
+
+### Key design decisions
+
+- **Two modes**: `TeamSetupOrchestrator` (sequential, all N-1s, depth-first) +
+  `AgentReconfiguration` (any agent, any time, both in v0.1)
+- **Conversation + extraction pattern** (ADR 0008): natural language turns, no per-turn JSON;
+  single LLM extraction call at validation time
+- **Direct reconfiguration in v0.1** (ADR 0009): all non-structural fields modifiable directly;
+  `work_hours`, `responsibilities`, `role_description` get parent-mediated governance in v0.2
+- **Depth-first traversal** + `navigation_stack` (`list[str]`): enables resume at any depth
+  (N-2, N-3, etc.) after interruption
+- **Frozen fields**: `domain`, `level`, `parent_id` (restructuring deferred to v0.2)
+- **New models**: `ValidationSession`, `AgentValidationRecord` (Pydantic + SQLModel tables)
+- **AgentState.status**: `PAUSED → IN_MEETING_1ON1` during conversation; `→ IDLE` at go-live
+- **LLM**: `claude-sonnet-4-6` for conversations and extraction (to revisit after LLM Router feature)
+
+### Artefacts
+
+- `docs/specs/2026-05-27-post-generation-team-setup.md` — Feature Brief
+
+**Stopped at:** Feature Brief validated — ready for implementation plan (Phase 2 of /feature)
+
+---
+
+## Last session — 2026-05-28
+
+Implementation plan written and validated for Post-generation team setup.
+
+### Plan design decisions (2026-05-28)
+
+- **`complete_current_agent()` → always `str` (Option B)**: never returns `None`;
+  when the subtree is exhausted, makes one final LLM call on the root agent for its
+  team summary; caller detects completion via `record.navigation_stack == []`
+- **`_advance_traversal` pure helper**: replaces the `_get_next_agent` pseudocode from
+  the spec; handles backtracking internally via `while True` loop; takes
+  `children_by_parent: dict[str, list[AgentSpec]]` (pre-loaded) — fully testable without DB
+- **LLM client**: `AnthropicClient(api_key, model="claude-sonnet-4-6")` constructed
+  directly by the caller — NOT via `LLMRouter.get_generator_client()` which returns
+  `claude-opus-4-7`
+- **`team_setup.py` line count exception**: file will exceed 300-line soft limit;
+  splitting artificially would harm cohesion — documented as deliberate exception
+- **`_call_extraction_llm` + `_apply_agent_updates` duplication**: ~70 lines duplicated
+  between `TeamSetupOrchestrator` and `AgentReconfiguration`; accepted for v0.1
+
+### Plan coverage
+
+- 7 tasks (T1–T7), TDD order T1 → T2 → T3 → T4 → T5 → T6 → T7
+- ~52 tests: T1 (9) + T2 (12) + T4 (49, including COO-only + resume + state revert) +
+  T5 (7)
+- `mini_org` + `coo_only_org` fixtures defined; mock LLM call ordering documented
+- `stub_prompt_loader` fixture defined for T4 tests (T3 prompts not required for pytest)
+- T7 (documentation updates) runs last, as part of phase 4
+
+### Artefacts (2026-05-28)
+
+- `docs/specs/2026-05-28-post-generation-team-setup-plan.md` — Implementation Plan
+- `docs/specs/2026-05-27-post-generation-team-setup.md` — updated (Option B spec)
+
+**Stopped at:** Implementation plan finalised — ready for TDD implementation (Phase 4 of /feature)
+
+---
+
+## Last session — 2026-05-28 (session 2)
+
+Full TDD implementation of Post-generation team setup (T1 → T7, all complete).
+
+### Files created
+
+- `backend/adjents/db/tables.py` — `ValidationSessionTable`, `AgentValidationRecordTable`
+- `backend/adjents/db/convert.py` — 4 new convert functions (session + record roundtrip)
+- `backend/adjents/generator/team_setup.py` — `AgentValidationStatus`, `ValidationSession`,
+  `AgentValidationRecord`, `TeamSetupError`, `_advance_traversal`, `_build_agent_context_message`,
+  `TeamSetupOrchestrator` (full Mode 1 orchestration)
+- `backend/adjents/agents/reconfiguration.py` — `AgentReconfiguration` (Mode 2 direct reconfiguration)
+- `backend/adjents/prompts/agent/intro.md` — agent introduction + adjustment conversation
+- `backend/adjents/prompts/agent/extract_agent_adjustments.md` — extraction prompt (JSON output)
+- `backend/scripts/smoke_team_setup.py` — mock mode (automated assertions) + real mode
+- `backend/tests/test_team_setup_models.py` — 9 pure roundtrip tests
+- `backend/tests/test_team_setup.py` — 49 orchestrator tests (traversal, conversation, go-live, skip)
+- `backend/tests/test_agent_reconfiguration.py` — 7 reconfiguration tests
+- `docs/decisions/0008-team-setup-natural-conversation-extraction.md` — ADR
+- `docs/decisions/0009-direct-agent-reconfiguration-v01.md` — ADR
+
+### Test counts
+
+- 238 tests passing (161 existing + 77 new), ruff + mypy --strict clean
+- Smoke test: mock mode fully automated and passing
+
+### Key decisions made during implementation
+
+- `_advance_traversal` pure function handles backtracking via `while True` loop; takes
+  `children_by_parent: dict` pre-loaded by caller — fully testable without DB
+- `complete_current_agent()` always returns `str` (Option B); caller detects subtree
+  completion via `record.navigation_stack == []`
+- `sqlmodel.select` required (not `sqlalchemy.select`) for SQLModel's `exec()` to
+  return typed model instances rather than `Row` tuples
+- `_call_extraction_llm` + `_apply_agent_updates` (~70 lines) intentionally duplicated
+  between `TeamSetupOrchestrator` and `AgentReconfiguration` — avoids cross-direction
+  dependency between `generator/` and `agents/` for v0.1
+- `team_setup.py` exceeds 300-line soft limit deliberately — splitting would harm
+  cohesion; documented exception
+
+**Stopped at:** T7 complete — feature ready for code review (Phase 5 of /feature)
+
+---
+
+## Last session — 2026-05-28 (session 3)
+
+Bugfix: agent context injection for team setup was incomplete.
+
+### Problem
+
+`_build_agent_context_message` accepted a `direct_reports` parameter and built a
+"Direct reports" block, but both call sites in `TeamSetupOrchestrator` passed empty
+lists (`[], {}`), so agents never received information about their sub-agents. Additionally,
+the direct reports block itself only projected name + role + skill names — omitting
+responsibilities, work_hours, scheduler_interval_seconds, and escalation_rules.
+
+Discovered via real-mode smoke test: Jordan (COO) never mentioned Alex, Maya, Felix;
+Alex said "no direct reports" despite having Sam.
+
+### Changes
+
+- `backend/adjents/generator/team_setup.py`:
+  - `_build_agent_context_message`: extended direct reports block to include
+    responsibilities, work_hours, scheduler_interval_seconds, escalation_rules,
+    and skill `requires_human_review` flag
+  - `TeamSetupOrchestrator._load_direct_reports()`: new helper (SELECT by `parent_id`)
+  - `start_agent_conversation()`: calls `_load_direct_reports` and passes result to context builder
+  - `complete_current_agent()`: same fix for sub-agents opened during DFS traversal
+  - Summary request message: reworded to explicitly ask the agent to present its team
+- `backend/adjents/prompts/agent/intro.md`: added instruction to present direct reports
+  in the opening message
+- `backend/tests/test_team_setup.py`: added `test_build_agent_context_message_direct_reports_full_config`
+  covering responsibilities, work_hours, scheduler_interval, escalation_rules, requires_human_review
+
+`AgentReconfiguration` was already correct — it called its own `_load_direct_reports` and
+passed the result to `_build_agent_context_message` (imported from `team_setup.py`).
+
+**Tests:** 20/20 passing, ruff + mypy --strict clean.
+
+**Stopped at:** bugfix complete — feature ready for code review (Phase 5 of /feature)
+
+---
+
+## Last session — 2026-05-28 (session 4)
+
+Spec compliance review (Phase 5 of /feature) completed by spec-reviewer subagent.
+
+### Process additions
+
+- Created `~/.claude/agents/spec-reviewer.md` — new specialized subagent for spec
+  compliance review (distinct from code-reviewer: checks "was the right thing built?"
+  vs "was it built right?")
+- Updated `~/.claude/skills/feature/SKILL.md` — inserted Phase 5 (Spec Compliance
+  Review) between TDD and Code Review; renumbered Code Review → Phase 6, Commit/PR → Phase 7
+- Created `docs/reviews/` directory for storing spec-reviewer and code-reviewer reports
+
+### Spec compliance review results
+
+Full report: `docs/reviews/2026-05-28-post-generation-team-setup-spec-compliance.md`
+
+**Verdict: ⚠️ Partially compliant.** 3 violations, 5 gaps, 3 deviations identified.
+
+Items to address before code review:
+
+| # | Type | Description |
+| --- | --- | --- |
+| V1 | Violation | `active_agent_id = None` instead of `root_agent_id` after subtree exhaustion (`team_setup.py:451`) |
+| V2 | Violation | Feature Brief text outdated vs ADR 0006 — fix by updating Feature Brief, not reverting `intro.md` |
+| V3 | Violation | `AgentReconfiguration` raises `ValueError` instead of `TeamSetupError` on retry exhaustion |
+| G1 | Gap | No `_log.warning()` when frozen fields are dropped in `_apply_agent_updates` |
+| G2 | Gap | No `_log.warning()` when skill name not found (remove/update) |
+| G3 | Gap | `skip_agent()` returns `str` instead of `dict[str, Any]` per spec |
+| G4 | Gap | `skip_all()` returns `None` instead of `dict[str, Any]` per spec |
+| G5 | Gap | `get_subtree_summary()` doesn't handle `agent_id=None` (full-org case) |
+
+Deviations (non-blocking, noted as tech debt):
+
+- D1: `_MAX_RETRIES` module-level vs class attribute
+- D2: `_build_agent_context_message` imported from `generator/` into `agents/` (cross-direction dep)
+- D3: `_call_extraction_llm` signatures diverge between the two classes
+
+**Stopped at:** spec compliance review complete — next: address V1/V2/V3/G1-G5, then Phase 6 (code review)
+
+---
+
+## Last session — 2026-05-29
+
+Spec compliance corrections applied to `feat/post-generation-team-setup`.
+
+### All 11 findings resolved (3 violations, 5 gaps, 3 deviations)
+
+**New shared modules created:**
+
+- `backend/adjents/errors.py` — `TeamSetupError` moved here from `team_setup.py`
+  (breaks the `generator/ → agents/` import direction V3+D2 required)
+- `backend/adjents/utils/__init__.py` + `backend/adjents/utils/agent_context.py` —
+  `_build_agent_context_message` moved here from `team_setup.py` (D2: no more
+  cross-direction import)
+
+**Code changes:**
+
+- V1: `complete_current_agent()` now sets `record.active_agent_id = root_agent_id`
+  (not `None`) before delivering the final team summary
+- V3: `AgentReconfiguration._call_extraction_llm` now raises `TeamSetupError` instead
+  of `ValueError` on retry exhaustion
+- G1: `_log.warning("Dropping frozen field %r for agent %s", ...)` added to both
+  `_apply_agent_updates` copies
+- G2: `_log.warning(...)` added for skill-not-found (remove and update paths) in both files
+- G3: `skip_agent()` returns `dict[str, Any]` with `"summary"` and `"warning"` keys;
+  warning includes agent name and ID
+- G4: `skip_all()` returns `dict[str, Any]` with `"summary"` and `"warning"` keys
+- G5: `get_subtree_summary(agent_id: str | None)` — `None` now returns full org
+- D1: `_MAX_RETRIES: int = 3` as class attribute in both `TeamSetupOrchestrator` and
+  `AgentReconfiguration` (was module-level)
+- D3: `_call_extraction_llm(conversations: list[str])` signature harmonized
+
+**Documentation updated:**
+
+- `docs/specs/2026-05-27-post-generation-team-setup.md` — V2: COO intro rule corrected
+  to reflect ADR 0006 (agents present direct reports); new shared modules added
+- `docs/reviews/2026-05-28-post-generation-team-setup-spec-compliance.md` — all findings
+  updated to ✅, verdict changed to "Fully compliant (post-corrections)"
+
+**Test count:** 244 tests passing (238 → +6 new), ruff + mypy --strict clean.
+
+**Stopped at:** all spec compliance corrections done — ready for Phase 6 (code review)
+
+---
+
+## Last session — 2026-06-02 (logged retroactively)
+
+- Phase 6 code review run by the `code-reviewer` subagent:
+  `docs/reviews/2026-05-29-post-generation-team-setup-code-review.md`
+  — verdict **changes requested**: 2 blockers (B1 silent JSON corruption of
+  `responsibilities` / `escalation_rules` in `_apply_agent_updates`; B2
+  `team_setup.py` at 839 lines), 5 warnings (A1–A5), 3 notes (N1–N3). Not addressed yet.
+- `fc90cb3`: frontend lint fix (non-null assertion removed, `vite.config.ts` excluded
+  from ESLint).
+
+**Stopped at:** code review written, findings not addressed, branch not merged.
+
+---
+
+## Last session — 2026-10-16
+
+Re-entry session after a ~4.5-month break. Goal: restore context, audit the repo state,
+and agree on a detailed, step-by-step action plan.
+
+### Findings
+
+- `PROJECT_STATE.md` was stale: the 2026-06-02 code review and its open findings were
+  not recorded (now logged above).
+- **Broken local environment**: the project was moved from Dropbox to `~/dev/adjents`.
+  Python venvs are not relocatable — entry-point scripts in `backend/.venv/bin/` kept
+  absolute shebangs to the old path → `uv run pytest` failed and mypy reported 57
+  import errors. In addition, the VS Code Python extension and the Claude Code
+  extension injected a stale `VIRTUAL_ENV` into integrated terminals.
+- **Pre-existing frontend check failures** (present on main since scaffold `af912bc`):
+  Prettier flags `pnpm-lock.yaml` / `pnpm-workspace.yaml` (no `.prettierignore`);
+  `vitest run` fails with "No test files found"; `tsc --noEmit` fails on the
+  `./index.css` side-effect import (missing Vite client types under TypeScript 6).
+- **Architecture gap**: VISION §3.3 and ARCHITECTURE §5 (agent loop step 4) rely on a
+  per-agent task queue, but no `Task` entity exists in the models, tables or
+  ARCHITECTURE §3.
+- **ADR 0007 rationale inaccurate**: in the installed SDK (`anthropic` 0.103.1),
+  `MODEL_NONSTREAMING_TOKENS` only lists Opus 4.0 / 4.1. The constraint that actually
+  applies to every model is the SDK's expected-duration check (`3600 × max_tokens /
+  128000` s > 600 s ⇒ `ValueError`, i.e. non-streaming fails above ~21,333
+  `max_tokens`). The decision (always stream) stays valid; the rationale must be fixed.
+- Hard-coded model IDs (`claude-opus-4-7`, `claude-sonnet-4-6`) are a generation behind
+  (current: Opus 5.5 / Sonnet 5.5). Dependencies are ~5 months old.
+
+### Done
+
+- `backend/.venv` deleted and rebuilt from `uv.lock` (`uv sync --all-groups`).
+- VS Code workspace settings (`.vscode/settings.json`, git-ignored):
+  `python.defaultInterpreterPath` pinned to `backend/.venv`,
+  `python.terminal.activateEnvironment: false`, `claudeCode.usePythonEnvironment: false`
+  — `uv run` is the single way to run Python tools.
+- Backend checks green on `feat/post-generation-team-setup`: ruff ✅, mypy --strict ✅,
+  244 tests ✅.
+- Milestone table restructured (Feature Brief / Implementation Plan / TDD / Smoke Test /
+  Spec Review / Code Review / Merged).
+- Detailed action plan agreed (see Next steps).
+
+### Decisions
+
+- **One branch open at a time**: each step = branch from up-to-date main → work → PR →
+  merge → delete branch. No parallel branches ⇒ no merge conflicts by construction.
+- **Merges via GitHub PRs** ("Create a merge commit", consistent with earlier merges).
+- `feat/post-generation-team-setup` is merged with its known review findings documented
+  in the PR (no runtime caller exists yet — only the smoke script); fixes in step 8.
+- **File size rule** (to be written into CLAUDE.md in step 1): source modules — 300
+  lines = review trigger ("more than one responsibility?"), 500 lines = hard limit,
+  docstrings included; tests — one test file per source module; smoke scripts — no cap,
+  but shared helpers extracted to `scripts/_common.py` beyond 400 lines; docs — no limit.
+- **No retroactive Feature Brief / Implementation Plan** for core models + DB layer —
+  their decisions already live in ARCHITECTURE §3 and ADRs 0002–0004.
+- **Retroactive spec + code reviews** for core models, DB layer, interview and org
+  generation (steps 4, 6, 7).
+- **Docstrings**: Google style; module docstring = purpose + place in the flow + entry
+  points + related ADRs; comments explain *why*, not *what*. Written by Claude,
+  explained to and validated by the user.
+- Technical explanations (agents as data, message passing, scheduler choice, frontend
+  tooling) are documented in ARCHITECTURE.md / READMEs / config comments — CLAUDE.md
+  only gets one-line pointers to keep the context window small.
+- Local model choice (Ollama) is revisited in step 10, with fresh research and a mini
+  benchmark on the target machine (Apple M4 Pro, 24 GB RAM).
+
+- PR #1 opened; its frontend CI job failed on the pre-existing Prettier issue. The
+  GitHub Actions CI (`.github/workflows/ci.yml`, from the scaffold) had in fact been
+  red on main since 2026-06-02 (ESLint, fixed by `fc90cb3`). Step 2.4 was moved to
+  step 0.5b so that main is green before the step-by-step workflow starts: the 4 CI
+  frontend commands (`pnpm lint`, `format:check`, `typecheck`, `test --run`) now
+  pass locally.
+
+**Stopped at:** step 0.6 — waiting for PR #1 CI to go green, then merge.
+
+---
+
 ## Next steps
 
-1. **Next feature** — Post-generation team validation (user ↔ N-1 agents)
+Each step follows the same cycle unless stated otherwise: create the branch from an
+up-to-date main → work → `make lint && make typecheck && make test` → update
+PROJECT_STATE (Last session + this checklist) → commit → GitHub PR → merge commit →
+delete the branch (local + remote) → `git checkout main && git pull`.
+
+Walkthrough steps (4, 6, 7, 8) follow this sub-sequence: (a) read the **tests first**
+(they are the executable spec), then the source, then the prompts, then run the smoke
+script; (b) add docstrings and comments; (c) spec review (`spec-reviewer` subagent,
+report in `docs/reviews/`); (d) code review (`code-reviewer` subagent, report in
+`docs/reviews/`); (e) review findings together and fix them with TDD.
+
+### Step 0 — Repair the environment and merge feature 3
+
+Branch: `feat/post-generation-team-setup`
+
+- [x] 0.1 Delete and rebuild `backend/.venv` (`uv sync --all-groups`)
+- [x] 0.2 VS Code workspace settings fixed; terminals and Claude Code restarted
+- [x] 0.3 Backend checks green (ruff, mypy --strict, 244 tests); frontend failures
+  confirmed as pre-existing on main (fixed in step 2)
+- [x] 0.4 Update PROJECT_STATE (milestone table, Last session, this plan)
+- [x] 0.5 Commit `docs(state)`, push, open PR #1 with a "Known issues" section (B1, B2,
+  A1–A5 → step 8)
+- [x] 0.5b Fix the pre-existing frontend CI failures (moved here from step 2.4 so that
+  main is green before the step-by-step workflow starts — the GitHub Actions CI on
+  main had been red since 2026-06-02): `.prettierignore` (pnpm-owned files),
+  `src/vite-env.d.ts` (Vite client types), vitest `--passWithNoTests` until real
+  frontend tests exist
+- [ ] 0.6 PR #1 CI green → merge (merge commit), delete the branch, pull main
+
+### Step 1 — Document architecture rationale
+
+Branch: `docs/architecture-rationale`
+
+- [ ] 1.1 ARCHITECTURE: new section "Agents are data, not code" — what agent-as-code
+  would mean, why it is impossible here (agents are generated at runtime), impact
+  (one generic loop, reconfiguration = DB update), trade-offs (behavior must be
+  expressible through fields + prompts + skills)
+- [ ] 1.2 ARCHITECTURE §4 Messaging: typed message passing explained (`Message`
+  Pydantic model, mailbox analogy), `MessageDispatcher` role (not implemented yet),
+  why (concurrent asyncio tasks, deadlocks, logging/replay, isolated tests), trade-offs
+  (indirection, request/response correlation via `parent_message_id`, async debugging,
+  in-memory queue ⇒ persist messages), Redis path for a hosted version
+- [ ] 1.3 ARCHITECTURE §5: what APScheduler and Celery are, impact of the asyncio
+  choice, trade-offs (single process, no multi-machine scaling, hand-written calendar
+  rules), what would change for a hosted multi-tenant version
+- [ ] 1.4 CLAUDE.md: one-line pointer to ARCHITECTURE for each architecture rule;
+  file size rule; docstring convention
+
+### Step 2 — Update dependencies
+
+Branch: `chore/deps-update`
+
+- [ ] 2.1 Backend: bump every dependency in `pyproject.toml` to the latest stable
+  version (`anthropic`, `openai`, `google-genai`, `pydantic`, `sqlmodel`, `chromadb`,
+  `fastapi`, dev tools…); `uv lock --upgrade` + `uv sync --all-groups`
+- [ ] 2.2 Check PyPI for a 1.x major release of the `anthropic` Python SDK; if
+  released, follow its migration guide (breaking changes)
+- [ ] 2.3 Frontend: bump dependencies; resolve tech debt ESLint 10 (`eslint.config.js`)
+  and Vite 8 (`vite.config.ts`)
+- [x] 2.4 ~~Fix pre-existing frontend check failures~~ — done in step 0.5b
+- [ ] 2.5 Full checks green + run the 3 smoke scripts (real API calls — paid)
+
+### Step 3 — Migrate to the Claude 5.5 generation
+
+Branch: `chore/claude-5-5-migration`
+
+- [ ] 3.1 Choose models per role together (proposal: Generator → Opus 5.5;
+  team-setup conversations + extraction → Sonnet 5.5)
+- [ ] 3.2 `AnthropicClient`: explicit `effort` (Opus 5.5 default is `medium`), review
+  `max_tokens` now that thinking is always on, handle `stop_reason == "refusal"` and
+  server-side fallbacks, confirm no `temperature` / assistant prefill is sent
+- [ ] 3.3 Re-verify the non-streaming threshold in the upgraded SDK; fix the
+  `anthropic_client.py` docstring and ARCHITECTURE §2; **amend** ADR 0007 (rationale
+  correction — never delete)
+- [ ] 3.4 Update model IDs in `router/router.py` and the 3 smoke scripts
+- [ ] 3.5 Re-run the smoke tests (paid)
+
+### Step 4 — Walkthrough: foundations
+
+Branch: `refactor/walkthrough-foundations`
+
+- [ ] 4.1 Walkthrough: models (`agents/`, `messaging/`, `memory/`, `projects/`,
+  `deliverables/`, `generator/models.py`) + their tests
+- [ ] 4.2 Walkthrough: `db/` (`tables.py`, `convert.py`, `engine.py`) + tests
+- [ ] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
+  `router/router.py` + tests
+- [ ] 4.4 Docstrings + comments
+- [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004
+- [ ] 4.6 Code review
+- [ ] 4.7 Review findings together, fix with TDD
+
+### Step 5 — Task entity (per-agent task queue)
+
+Branch: `feat/task-entity` — full `/feature` workflow
+
+- [ ] 5.1 Brainstorming: lifecycle and statuses, priority and reordering (VISION §3.3),
+  requester, links to `AgentState` (`current_task_summary` → `current_task_id`?),
+  `BlockingQuestion`, `Deliverable`, `Project` (v0.2), retrieval queries
+- [ ] 5.2 ADR 0010
+- [ ] 5.3 Feature Brief + Implementation Plan
+- [ ] 5.4 TDD: Pydantic model + SQLModel table + convert functions + tests
+- [ ] 5.5 Update ARCHITECTURE §3 and §5 (agent loop step 4)
+- [ ] 5.6 Spec review + code review, fixes
+
+### Step 6 — Walkthrough: Generator Agent interview
+
+Branch: `refactor/walkthrough-interview`
+
+- [ ] 6.1 Walkthrough: `test_generator_interview.py` → `generator/interview.py` →
+  `prompts/generator/interview.md` + `extract_business_context.md` → run
+  `smoke_generator_interview.py`
+- [ ] 6.2 Tech debt: `resume()` N sequential SELECTs → single `WHERE id IN (...)`
+  query (TDD, test asserting the query count)
+- [ ] 6.3 Prompt audit for Claude 5.5 (patterns written for 4.x models)
+- [ ] 6.4 Docstrings + comments
+- [ ] 6.5 Spec review (against the 2026-05-20 Feature Brief) + code review, fixes
+
+### Step 7 — Walkthrough: Generator Agent org generation
+
+Branch: `refactor/walkthrough-org-generation`
+
+- [ ] 7.1 Walkthrough: `test_generator_org_generation.py` →
+  `generator/org_generation.py` → `prompts/generator/org_generation.md` → run
+  `smoke_generator_org.py`
+- [ ] 7.2 Split `org_generation.py` (435 lines) into a package by responsibility
+  (draft: `models.py`, `validation.py`, `parsing.py`, `generator.py`); split the test
+  file accordingly (one test file per module)
+- [ ] 7.3 Prompt audit for Claude 5.5
+- [ ] 7.4 Docstrings + comments
+- [ ] 7.5 Spec review (against the 2026-05-22 Feature Brief) + code review, fixes
+
+### Step 8 — Walkthrough: post-generation team setup + code review fixes
+
+Branch: `refactor/walkthrough-team-setup`
+
+- [ ] 8.1 Walkthrough: team setup tests → `generator/team_setup.py`,
+  `agents/reconfiguration.py`, `utils/agent_context.py` → prompts `agent/intro.md` +
+  `extract_agent_adjustments.md` → run `smoke_team_setup.py`
+- [ ] 8.2 B1 (TDD — failing test first): JSON-serialize `responsibilities` /
+  `escalation_rules` in `_apply_agent_updates`
+- [ ] 8.3 B2: split `team_setup.py` (839 lines) into a package; extract the logic
+  shared with `reconfiguration.py` (extraction LLM call + `_apply_agent_updates` +
+  persistence helpers) into one module — removes the ~70 duplicated lines; split
+  `test_team_setup_orchestrator.py` (1,297 lines) accordingly
+- [ ] 8.4 Warnings A1–A5 (asserts as flow control, `validate_team` guard, circular
+  import risk, misleading resumability, `reply()` before `start()` guard)
+- [ ] 8.5 Notes N1–N3: decide together (fix or accept)
+- [ ] 8.6 Smoke scripts: extract shared helpers to `scripts/_common.py` if > 400 lines
+- [ ] 8.7 Docstrings + comments
+- [ ] 8.8 New code review on the result, fixes
+
+### Step 9 — Document frontend and tooling
+
+Branch: `docs/frontend-and-tooling`
+
+- [ ] 9.1 Comment config files: `tsconfig.json` (JSONC — every compiler option,
+  e.g. `isolatedModules`), `vite.config.ts`, `eslint.config.js`,
+  `pnpm-workspace.yaml`, `backend/pyproject.toml`
+- [ ] 9.2 `frontend/README.md`: dependency table (`package.json` accepts no comments),
+  Python ↔ JS tooling equivalences, directory layout rationale
+- [ ] 9.3 ARCHITECTURE §11: data flow `api/ → state/ → views/ + components/ |
+  workspace/`, layer-based vs feature-based layout trade-off
+
+### Step 10 — LLM Router
+
+Branch: `feat/llm-router` — full `/feature` workflow
+
+- [ ] 10.1 Brainstorming: routing rules (complexity, `sensitivity=high` → local),
+  concurrency, startup staggering (ARCHITECTURE §8)
+- [ ] 10.2 OpenAI, Google and Ollama clients; model choice for each provider
+- [ ] 10.3 Local models: update Ollama; research recent models suited to 24 GB RAM;
+  mini benchmark on Adjents tasks (JSON validity, instruction following, tokens/s);
+  choose the embedding model for Chroma; remove unused local models
+- [ ] 10.4 Feature Brief → Plan → TDD → smoke → spec review → code review → PR
 
 ---
 
 ## Technical debt
 
-- `eslint.config.js`: written against ESLint 9 API — may need adjustments for ESLint 10 after `pnpm install`
+- `eslint.config.js`: written against ESLint 9 API — may need adjustments for ESLint 10
+  after `pnpm install` → **step 2.3**
 - `vite.config.ts`: written against Vite 6 API — to validate against installed Vite 8
+  → **step 2.3**
+- ADR 0007 rationale inaccurate (see Last session 2026-10-16) → **step 3.3**
+- No `Task` entity despite the per-agent task queue in VISION §3.3 / ARCHITECTURE §5
+  → **step 5**
 - `resume()` in `GeneratorInterview`: N sequential SELECTs (one per message) — acceptable
-  for v0.1 short conversations, replace with `WHERE id IN (...)` if conversations grow
+  for v0.1 short conversations, replace with `WHERE id IN (...)` → **step 6.2**
+- Code review findings on team setup (B1, B2, A1–A5, N1–N3) → **step 8**
 - `work_hours` in `AgentSpec`: single daily window (`"HH:MM-HH:MM"`) applied uniformly
   every day — no day-of-week granularity, no multi-window support; per-agent independent
   schedules ARE supported (each `AgentSpec` has its own field); day-of-week variation
@@ -299,10 +815,18 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-20 | Pydantic domain models ≠ SQLModel tables (ADR 0002) | Persistence concerns isolated in `db/`; FastAPI contract stays clean |
 | 2026-05-20 | Async SQLite sessions via aiosqlite (ADR 0003) | asyncio-first app; sync sessions would block the event loop |
 | 2026-05-20 | BlockingQuestion as first-class persisted entity (ADR 0004) | Schema complet dès le début; shape connue via le protocole WebSocket |
-| 2026-05-22 | Post-gen validation: agents start `is_paused=True`; N-1 agents (not Generator Agent) introduce themselves (ADR 0006) | Builds trust; N-1 has domain context; establishes operational relationship |
+| 2026-05-22 | Post-gen team setup: agents start `is_paused=True`; N-1 agents (not Generator Agent) introduce themselves (ADR 0006) | Builds trust; N-1 has domain context; establishes operational relationship |
 | 2026-05-22 | Org restructuring deferred to v0.2 — Generator Agent orchestrates, consults N-1/N-2 (ADR 0005) | Memory preservation; agent domain knowledge improves proposals |
 | 2026-05-22 | Micro-adjustments via parent agent (v0.2) — N+1 owns team config for small changes (ADR 0005) | Distinct from restructuring; avoids Generator Agent overkill |
 | 2026-05-22 | Org generation: single LLM call (global coherence); `AgentState` created in `generate()`; `visual_character` from predefined list | Coherence over speed; no orphan invariant; PixiJS sprite safety |
 | 2026-05-25 | `AnthropicClient` streams unconditionally via `messages.stream()` (ADR 0007) | SDK raises `ValueError` for `messages.create()` with `max_tokens > 8192` on Opus 4+ |
-| 2026-05-25 | N-1 leaf nodes valid; N-2 count driven by context, not enforced; skills no upper cap | Initial org is a first draft — N-1 interviews refine scope and spawn specialists (ADR 0006) |
+| 2026-05-25 | N-1 leaf nodes valid; N-2 count driven by context, not enforced; skills no upper cap | Initial org is a first draft — N-1 setup conversations refine scope and spawn specialists (ADR 0006) |
 | 2026-05-25 | `generate()` accepts optional `on_agent_ready` callback for progress reporting | Pattern for future WebSocket streaming of org generation progress to the frontend |
+| 2026-05-27 | Natural conversation + single extraction call at validation time (ADR 0008) | Avoids per-turn JSON fragility; one clean extraction when the user is satisfied |
+| 2026-05-27 | Direct reconfiguration v0.1; parent-mediated governance for `work_hours`/`responsibilities`/`role_description` in v0.2 (ADR 0009) | Skills are descriptive only in v0.1 (no execution barrier); governance deferred until agents are autonomous |
+| 2026-05-28 | `_apply_agent_updates` + `_call_extraction_llm` duplicated between `TeamSetupOrchestrator` and `AgentReconfiguration` | Avoids cross-direction `generator/ → agents/` dependency at v0.1 scale; accepted per ADR 0008 |
+| 2026-05-28 | `sqlmodel.select` required (not `sqlalchemy.select`) for typed SQLModel `exec()` results | `sqlalchemy.select` returns `Row` tuples; `sqlmodel.select` returns scalar model instances |
+| 2026-10-16 | One branch open at a time; every merge through a GitHub PR (merge commit) | No parallel branches ⇒ no merge conflicts; PR history doubles as portfolio evidence |
+| 2026-10-16 | File size rule: source 300 lines = review trigger, 500 = hard limit (docstrings included); one test file per source module | Line count is a proxy for single responsibility; must not push towards stripping documentation |
+| 2026-10-16 | `Task` becomes a first-class persisted entity (ADR 0010 in step 5) | Task lifecycle (status, priority, requester, links) does not belong in the hot, frequently broadcast `AgentState` record |
+| 2026-10-16 | `uv run` is the only way to run Python tools; IDE venv auto-activation disabled | A stale activated venv broke the environment after the project move |
