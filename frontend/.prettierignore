@@ -1,0 +1,4 @@
+# Files written by pnpm itself: pnpm owns their formatting and may rewrite them
+# on install, so Prettier must not enforce its own style on them.
+pnpm-lock.yaml
+pnpm-workspace.yaml
