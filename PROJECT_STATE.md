@@ -744,7 +744,7 @@ decision agreed one by one (see Decisions log, 2026-10-22, step 3).
 - VISION §1.2 lists a per-agent *complexity threshold* produced by the Generator; it
   is missing from `AgentSpec`.
 
-**Stopped at:** decisions agreed and recorded — next: ADR 0012 (`/adr`), then 3.2 (TDD).
+**Stopped at:** decisions agreed and recorded, ADR 0012 written — next: 3.2 (TDD).
 
 ---
 
@@ -824,7 +824,7 @@ Branch: `chore/claude-5-5-migration`
   `claude-opus-5-5`; team setup (conversations + extraction) → `claude-sonnet-5-5`.
   These are the Anthropic defaults — selection among Anthropic / OpenAI / Gemini comes
   in step 10, so `complete()` stays provider-neutral
-- [ ] 3.1b ADR 0012 — provider-neutral LLM call contract (via `/adr`, before 3.2)
+- [x] 3.1b ADR 0012 — provider-neutral LLM call contract (written before 3.2)
 - [ ] 3.2 `AnthropicClient` (TDD): `Effort` type (`low` / `medium` / `high`, in
   `adjents/llm/types.py`), `effort` required on every call (no client default); explicit
   `thinking: {type: "adaptive", display: "summarized"}` + DEBUG logger
