@@ -744,7 +744,44 @@ decision agreed one by one (see Decisions log, 2026-10-22, step 3).
 - VISION §1.2 lists a per-agent *complexity threshold* produced by the Generator; it
   is missing from `AgentSpec`.
 
-**Stopped at:** decisions agreed and recorded, ADR 0012 written — next: 3.2 (TDD).
+### Done (2026-10-22, step 3)
+
+- ADR 0012 (provider-neutral LLM call contract) written; ADR 0007 and 0008 amended.
+- `AnthropicClient` rewritten (TDD): `Effort` type in `llm/types.py`, required `effort`,
+  explicit adaptive thinking with summarized display, `stop_reason` checked before
+  the text, typed errors in `llm/errors.py`, DEBUG usage log, opt-in
+  `adjents.llm.thinking` logger, `model` property. Callers pass their effort
+  constants (done in 3.2: a required `effort` needs them to type-check); org
+  generation `max_tokens` 32000 → 64000 at `high` effort.
+- `LLMRouter`: Claude 5.5 IDs + `get_team_setup_client()`; no model ID hard-coded
+  outside the router. Smoke scripts print the router's model, catch
+  `LLMResponseError`, and accept `--llm-debug` (new `scripts/_common.py`).
+- Docs: ARCHITECTURE §2 (streaming rationale, call contract), §8 (router status,
+  `RouterDecision.temperature` → `effort`, Claude 5.5 IDs), §9 (`model_hint`
+  informational); `backend/README.md`; `model_hint` in the 5 prompts.
+- 282 tests (244 → 282), ruff + mypy --strict + frontend checks green.
+
+### Smoke tests (2026-10-22, step 3, real API calls, `--llm-debug`)
+
+| Smoke | Model | Result | Calls | Output tokens (max per call) | Duration |
+| --- | --- | --- | --- | --- | --- |
+| `smoke_team_setup.py --real` | `claude-sonnet-5-5` | ✅ modes 1 and 2, `work_hours` change applied | 13 | 2,157 (383) | 28 s |
+| `smoke_generator_interview.py` | `claude-opus-5-5` | ✅ `ready_to_generate` reached, `BusinessContext` complete | 12 | 10,689 (1,863) | 1 min 52 s |
+| `smoke_generator_org.py` | `claude-opus-5-5` | ✅ all assertions | 1 | 28,256 | 3 min 53 s |
+
+- Cost: about $0.80 of output tokens (measured) plus an estimated ~$0.30 of input
+  (input tokens are not logged) — about $1.1, within the ~$1.5–2 estimate.
+- `max_tokens` caps confirmed with margin: 16000 vs 1,863 max; 64000 vs 28,256.
+- Sonnet 5.5 at `medium` produced no thinking summaries on team setup conversations
+  (12–383 output tokens per call): it barely thinks on these simple turns.
+- **Behavior shift on org generation**: Opus 5.5 at `high` generated a much larger org
+  for the same Sophie Dubois scenario — 29 agents (10 N-1, 18 N-2), 88 skills — vs
+  13 agents (10 N-1, 2 N-2), 36 skills with Opus 4.7 in step 2. Its thinking summary
+  shows deliberate choices (two specialists per lead, one leaf N-1). Not a failure
+  (prompt rule #3: N-2 when ≥ 2 task clusters); whether this size is desirable is
+  decided in the prompt audit (step 7.3).
+
+**Stopped at:** step 3 complete — PR open, waiting for CI, then merge.
 
 ---
 
@@ -846,14 +883,15 @@ Branch: `chore/claude-5-5-migration`
   print `client.model`; `model_hint` updated and documented as informational;
   `backend/README.md`; ARCHITECTURE §8 (IDs, `RouterDecision`: `temperature` →
   `effort`, status note) and §9
-- [ ] 3.4b Fix `smoke_generator_interview.py`: the scripted Alex Chen scenario never
+- [x] 3.4b Fix `smoke_generator_interview.py`: the scripted Alex Chen scenario never
   gives the daily rate (`financial_goals`) nor the email / banking tools
   (`existing_tools`), so the interview never reaches `ready_to_generate` (seen in step
   2.5). Complete the scenario only (prompt audit = step 6.3): daily rate €450 (turn 5);
   Google Workspace `alex@luminescence.com` + Qonto business account (turn 6). If the
-  scenario is not enough, stop and ask — scenario completed, verified by the smoke
-  run in 3.5
-- [ ] 3.5 Re-run the smoke tests (paid — cost estimate approved first)
+  scenario is not enough, stop and ask — scenario completed; the smoke run of 3.5
+  reaches `ready_to_generate` (scenario change only, prompt untouched)
+- [x] 3.5 Re-run the smoke tests (paid — cost estimate approved first) — 3/3 ✅,
+  about $1.1 (see Last session 2026-10-22, step 3)
 
 ### Step 4 — Walkthrough: foundations
 
@@ -863,16 +901,27 @@ Branch: `refactor/walkthrough-foundations`
   `deliverables/`, `generator/models.py`) + their tests
 - [ ] 4.2 Walkthrough: `db/` (`tables.py`, `convert.py`, `engine.py`) + tests
 - [ ] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
-  `router/router.py` + tests
-- [ ] 4.3b Structured outputs: design a provider-neutral method (Pydantic model in →
-  validated instance out) and implement it for Anthropic (`output_config.format` /
-  `messages.parse()`); check in their docs only that OpenAI and Gemini offer an
-  equivalent; check compatibility with adaptive thinking. Adopted by callers in steps
-  6, 7, 8
-- [ ] 4.4 Docstrings + comments
-- [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004
+  `llm/types.py`, `llm/errors.py`, `router/router.py` + tests (incl.
+  `test_llm_errors.py`)
+- [ ] 4.4 Docstrings + comments (`anthropic_client.py`, `types.py`, `errors.py` and
+  `router.py` already have full docstrings from step 3: review only)
+- [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004, and for the LLM layer
+  against ADR 0007 (amended), ADR 0012 and ARCHITECTURE §2 / §8
 - [ ] 4.6 Code review
 - [ ] 4.7 Review findings together, fix with TDD
+
+### Step 4b — Structured outputs
+
+Branch: `feat/structured-outputs` — before steps 6, 7, 8, which adopt it
+
+- [ ] 4b.1 Design a provider-neutral method (Pydantic model in → validated instance
+  out); check in their docs only that OpenAI and Gemini offer an equivalent; check
+  compatibility with adaptive thinking and the JSON Schema features supported
+- [ ] 4b.2 **Amend** ADR 0012 (the neutral contract gains a method)
+- [ ] 4b.3 TDD: Anthropic implementation (`output_config.format` /
+  `messages.parse()`), same `stop_reason` handling and typed errors as `complete()`
+- [ ] 4b.4 Docs (ARCHITECTURE §2) + code review, fixes. Callers adopt it in 6.3, 7.3
+  and 8.5b
 
 ### Step 5 — Task entity (per-agent task queue) + routing inputs
 
@@ -890,8 +939,10 @@ Branch: `feat/task-entity` — full `/feature` workflow
     step 8. ADR to decide (model selection by agent tier and task complexity)
 - [ ] 5.2 ADR 0011
 - [ ] 5.3 Feature Brief + Implementation Plan
-- [ ] 5.4 TDD: Pydantic model + SQLModel table + convert functions + tests
-- [ ] 5.5 Update ARCHITECTURE §3 and §5 (agent loop step 4)
+- [ ] 5.4 TDD: `Task` Pydantic model + SQLModel table + convert functions + tests;
+  `AgentSpec` reasoning-tier field (step 5.1b) + table column + convert functions +
+  tests
+- [ ] 5.5 Update ARCHITECTURE §3, §5 (agent loop step 4) and §8 (router inputs)
 - [ ] 5.6 Spec review + code review, fixes
 
 ### Step 6 — Walkthrough: Generator Agent interview
@@ -900,16 +951,18 @@ Branch: `refactor/walkthrough-interview`
 
 - [ ] 6.1 Walkthrough: `test_generator_interview.py` → `generator/interview.py` →
   `prompts/generator/interview.md` + `extract_business_context.md` → run
-  `smoke_generator_interview.py`
+  `smoke_generator_interview.py --llm-debug`
 - [ ] 6.2 Tech debt: `resume()` N sequential SELECTs → single `WHERE id IN (...)`
   query (TDD, test asserting the query count)
 - [ ] 6.2b Partial state: `reply()` persists the user message before the LLM call, so a
   failed call (network, refusal, truncation) leaves the stored conversation ending with
   an unanswered user message — decide the fix (TDD)
-- [ ] 6.3 Prompt audit for Claude 5.5 (patterns written for 4.x models); adopt
-  structured outputs (step 4.3b) for interview turns and `BusinessContext` extraction
+- [ ] 6.3 Prompt audit for Claude 5.5 (patterns written for 4.x models — e.g.
+  `/claude-api prompt-audit`); adopt structured outputs (step 4b) for interview turns
+  and `BusinessContext` extraction
 - [ ] 6.4 Docstrings + comments
-- [ ] 6.5 Spec review (against the 2026-05-20 Feature Brief) + code review, fixes
+- [ ] 6.5 Spec review (against the 2026-05-20 Feature Brief; LLM calls against ADR
+  0012) + code review, fixes
 
 ### Step 7 — Walkthrough: Generator Agent org generation
 
@@ -917,14 +970,18 @@ Branch: `refactor/walkthrough-org-generation`
 
 - [ ] 7.1 Walkthrough: `test_generator_org_generation.py` →
   `generator/org_generation.py` → `prompts/generator/org_generation.md` → run
-  `smoke_generator_org.py`
-- [ ] 7.2 Split `org_generation.py` (435 lines) into a package by responsibility
+  `smoke_generator_org.py --llm-debug`
+- [ ] 7.2 Split `org_generation.py` (442 lines) into a package by responsibility
   (draft: `models.py`, `validation.py`, `parsing.py`, `generator.py`); split the test
   file accordingly (one test file per module)
-- [ ] 7.3 Prompt audit for Claude 5.5; adopt structured outputs (step 4.3b); the
-  Generator assigns each agent's reasoning tier (step 5.1b) — prompt + validation
+- [ ] 7.3 Prompt audit for Claude 5.5 (e.g. `/claude-api prompt-audit`); adopt
+  structured outputs (step 4b); the
+  Generator assigns each agent's reasoning tier (step 5.1b) — prompt + validation.
+  Decide whether the larger orgs generated by Opus 5.5 are desirable (Sophie: 29
+  agents / 18 N-2 / 88 skills vs 13 / 2 / 36 on Opus 4.7 — see step 3 smoke tests)
 - [ ] 7.4 Docstrings + comments
-- [ ] 7.5 Spec review (against the 2026-05-22 Feature Brief) + code review, fixes
+- [ ] 7.5 Spec review (against the 2026-05-22 Feature Brief; LLM calls against ADR
+  0012) + code review, fixes
 
 ### Step 8 — Walkthrough: post-generation team setup + code review fixes
 
@@ -932,21 +989,26 @@ Branch: `refactor/walkthrough-team-setup`
 
 - [ ] 8.1 Walkthrough: team setup tests → `generator/team_setup.py`,
   `agents/reconfiguration.py`, `utils/agent_context.py` → prompts `agent/intro.md` +
-  `extract_agent_adjustments.md` → run `smoke_team_setup.py`
+  `extract_agent_adjustments.md` → run `smoke_team_setup.py --real --llm-debug`
 - [ ] 8.2 B1 (TDD — failing test first): JSON-serialize `responsibilities` /
   `escalation_rules` in `_apply_agent_updates`
-- [ ] 8.3 B2: split `team_setup.py` (839 lines) into a package; extract the logic
-  shared with `reconfiguration.py` (extraction LLM call + `_apply_agent_updates` +
-  persistence helpers) into one module — removes the ~70 duplicated lines; split
-  `test_team_setup_orchestrator.py` (1,297 lines) accordingly
+- [ ] 8.3 B2: split `team_setup.py` (851 lines) into a package; extract the logic
+  shared with `reconfiguration.py` (310 lines, past the 300-line review trigger) —
+  extraction LLM call + `_apply_agent_updates` + persistence helpers + the duplicated
+  effort constants — into one module, removing the ~70 duplicated lines; split
+  `test_team_setup_orchestrator.py` (1,358 lines) accordingly
 - [ ] 8.4 Warnings A1–A5 (asserts as flow control, `validate_team` guard, circular
   import risk, misleading resumability, `reply()` before `start()` guard)
 - [ ] 8.5 Notes N1–N3: decide together (fix or accept)
-- [ ] 8.5b Adopt structured outputs (step 4.3b) for the adjustments extraction; team
+- [ ] 8.5b Adopt structured outputs (step 4b) for the adjustments extraction; team
   setup / reconfiguration can adjust the agent's reasoning tier (step 5.1b)
-- [ ] 8.6 Smoke scripts: extract shared helpers to `scripts/_common.py` if > 400 lines
+- [ ] 8.5c Prompt audit for Claude 5.5 of `agent/intro.md` and
+  `extract_agent_adjustments.md` (written for Sonnet 4.6 — e.g.
+  `/claude-api prompt-audit`)
+- [ ] 8.6 Smoke scripts: move the duplicated helpers (`_hr`, `_load_env`, DB setup…)
+  into `scripts/_common.py` (created in step 3); `smoke_team_setup.py` is 635 lines
 - [ ] 8.7 Docstrings + comments
-- [ ] 8.8 New code review on the result, fixes
+- [ ] 8.8 New code review on the result (LLM calls against ADR 0012), fixes
 
 ### Step 9 — Document frontend and tooling
 
@@ -990,7 +1052,9 @@ Branch: `feat/llm-router` — full `/feature` workflow
     for evals and for an agent-reasoning UI
   - Prompt caching (measure `usage.cache_read_input_tokens` with the traces)
   - `model_hint` in prompt frontmatter: consumed by the router, or removed
-- [ ] 10.2 OpenAI, Google and Ollama clients; model choice for each provider
+- [ ] 10.2 OpenAI, Google and Ollama clients implementing the ADR 0012 contract;
+  introduce the `LLMClient` protocol (callers stop depending on `AnthropicClient`);
+  model choice for each provider
 - [ ] 10.3 Local models: update Ollama; research recent models suited to 24 GB RAM;
   mini benchmark on Adjents tasks (JSON validity, instruction following, tokens/s);
   choose the embedding model for Chroma; remove unused local models
@@ -1027,7 +1091,7 @@ Branch: `feat/llm-router` — full `/feature` workflow
 - SDK HTTP errors (`anthropic.RateLimitError`, `APIStatusError`, …) reach callers
   unchanged — map them to provider-neutral errors (retryable or not) → **step 10**
 - JSON outputs rely on prompt instructions + retry loops on invalid JSON → structured
-  outputs: provider-neutral method in **step 4.3b**, adopted in **steps 6, 7, 8**
+  outputs: provider-neutral method in **step 4b**, adopted in **steps 6, 7, 8**
 - No prompt caching: multi-turn conversations resend the system prompt + history at
   full input price on every turn → **step 10** (measured with the per-call traces)
 - Multi-turn conversations replay only the text of earlier replies, not their thinking
@@ -1035,6 +1099,10 @@ Branch: `feat/llm-router` — full `/feature` workflow
   input) → decided with the **agent loop** design (v0.1, after step 10), together with
   its action mechanism (parsed JSON actions, ARCHITECTURE §5 step 5d, vs internal
   tools — thinking-block replay is mandatory inside a tool-use loop)
+- Root `README.md` gives `ollama pull qwen2.5:7b` as the example model while
+  `qwen3.5:9b` is installed → **step 10.3** (local model choice)
+- The DEBUG usage line logs output tokens only; input / cache tokens are not logged,
+  so smoke-test cost is partly estimated → per-call tracing in **step 10**
 - `work_hours` in `AgentSpec`: single daily window (`"HH:MM-HH:MM"`) applied uniformly
   every day — no day-of-week granularity, no multi-window support; per-agent independent
   schedules ARE supported (each `AgentSpec` has its own field); day-of-week variation
@@ -1089,5 +1157,7 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-22 | Model IDs only in `router/router.py`; team setup client from `LLMRouter.get_team_setup_client()` (ADR 0008 amendment) | Callers and scripts ask the router instead of choosing a model (rule 4); same shape step 10 generalizes |
 | 2026-10-22 | Explicit `thinking: {type: "adaptive", display: "summarized"}` inside `AnthropicClient`; summaries only in a DEBUG logger `adjents.llm.thinking` (ADR 0012) | Behavior independent of per-model defaults; reasoning visible for debugging without changing the `complete()` contract; tracing designed in step 10 |
 | 2026-10-22 | Per-agent reasoning tier set by role, not hierarchy level; designed in step 5 (extended), not step 4 | A specialized N-2 may need more reasoning than its parent; step 4 is a walkthrough, and the field needs its producer (step 7) and consumer (step 10) in view |
-| 2026-10-22 | Structured outputs: neutral method in step 4.3b, adopted in steps 6, 7, 8 | Removes JSON retry loops without reopening callers after their walkthroughs |
+| 2026-10-22 | Structured outputs: neutral method in a dedicated step 4b (`feat/structured-outputs`, ADR 0012 amendment), adopted in steps 6, 7, 8 | Removes JSON retry loops without reopening callers after their walkthroughs; a new capability does not belong in a walkthrough (`refactor/`) branch |
+| 2026-10-22 | Plan amended after step 3: step 4 walkthrough covers `llm/types.py` / `llm/errors.py` and reviews the LLM layer against ADRs 0007 / 0012; step 5 also adds the `AgentSpec` reasoning tier; prompt audit added for team setup (8.5c); `LLMClient` protocol in 10.2 | Keep the plan consistent with the step 3 changes; the team setup prompts were written for Sonnet 4.6 like the Generator ones |
 | 2026-10-22 | LLM call contract = ADR 0012 (0011 stays reserved for `Task`) | ADR numbers are stable identifiers; a temporary gap is harmless |
+| 2026-10-22 | Smoke scripts get `--llm-debug`; `scripts/_common.py` created in step 3 (ahead of step 8.6) | One shared logging setup instead of three copies; real usage figures to calibrate `max_tokens` |
