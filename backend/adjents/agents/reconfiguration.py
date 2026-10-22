@@ -18,6 +18,7 @@ from adjents.db.tables import (
 )
 from adjents.errors import TeamSetupError
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.types import Effort
 from adjents.prompts.loader import PromptLoader
 from adjents.utils.agent_context import _build_agent_context_message
 
@@ -29,6 +30,9 @@ _INTERVAL_MAX = 3600
 
 class AgentReconfiguration:
     _MAX_RETRIES: int = 3
+    # Interim: moves into the router's per-role table in step 10 (ADR 0012).
+    _CONVERSATION_EFFORT: Effort = "medium"
+    _EXTRACTION_EFFORT: Effort = "medium"
 
     def __init__(
         self,
@@ -69,7 +73,9 @@ class AgentReconfiguration:
         )
         intro_prompt = self._prompts.get("agent/intro")
         messages: list[dict[str, str]] = [{"role": "user", "content": context_msg}]
-        response = await self._client.complete(messages, system=intro_prompt.content)
+        response = await self._client.complete(
+            messages, effort=self._CONVERSATION_EFFORT, system=intro_prompt.content
+        )
         messages.append({"role": "assistant", "content": response})
         self._messages = messages
 
@@ -82,7 +88,9 @@ class AgentReconfiguration:
         self._messages.append({"role": "user", "content": message})
         intro_prompt = self._prompts.get("agent/intro")
         response = await self._client.complete(
-            self._messages, system=intro_prompt.content
+            self._messages,
+            effort=self._CONVERSATION_EFFORT,
+            system=intro_prompt.content,
         )
         self._messages.append({"role": "assistant", "content": response})
         await self._append_message("user", message)
@@ -128,7 +136,9 @@ class AgentReconfiguration:
                         ),
                     }
                 )
-            raw = await self._client.complete(messages, system=extract_prompt.content)
+            raw = await self._client.complete(
+                messages, effort=self._EXTRACTION_EFFORT, system=extract_prompt.content
+            )
             try:
                 return json.loads(raw)  # type: ignore[no-any-return]
             except json.JSONDecodeError as exc:

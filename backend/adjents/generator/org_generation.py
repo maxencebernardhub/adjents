@@ -16,6 +16,7 @@ from adjents.agents.models import AgentSpec, AgentState, AgentStatus, Skill
 from adjents.db.convert import agent_spec_to_table, agent_state_to_table, skill_to_table
 from adjents.generator.models import BusinessContext
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.types import Effort
 from adjents.prompts.loader import PromptLoader
 
 # ---------------------------------------------------------------------------
@@ -316,10 +317,13 @@ class GeneratorOrgGeneration:
     """
 
     _MAX_RETRIES: int = 3
-    # Org JSONs for complex businesses (10+ domains) can exceed 10k tokens.
-    # 32k is a practical ceiling well above any expected org size; Opus 4.7
-    # supports up to 128k output tokens.
-    _MAX_TOKENS: int = 32000
+    # Org JSONs for complex businesses (10+ domains) can exceed 10k tokens, and
+    # high-effort thinking shares the same output budget. 64k leaves room for both
+    # while still bounding a runaway call (ADR 0012). Interim: effort and cap move
+    # into the router's per-role table in step 10.
+    _MAX_TOKENS: int = 64000
+    # Single one-shot call whose coherence drives the whole org: worth more thinking.
+    _EFFORT: Effort = "high"
 
     def __init__(
         self,
@@ -370,7 +374,10 @@ class GeneratorOrgGeneration:
         last_raw = ""
         for _ in range(self._MAX_RETRIES):
             last_raw = await self._client.complete(
-                messages, system=system, max_tokens=self._MAX_TOKENS
+                messages,
+                effort=self._EFFORT,
+                system=system,
+                max_tokens=self._MAX_TOKENS,
             )
             try:
                 data: dict[str, Any] = json.loads(last_raw)

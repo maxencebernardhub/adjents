@@ -19,6 +19,7 @@ from adjents.generator.org_generation import (
     _validate_structure,
 )
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.errors import LLMRefusalError, LLMTruncatedError
 from adjents.prompts.loader import LoadedPrompt, PromptLoader
 
 # ---------------------------------------------------------------------------
@@ -360,6 +361,53 @@ async def test_generate_calls_llm_with_max_tokens(
         client.complete.call_args.kwargs["max_tokens"]
         == GeneratorOrgGeneration._MAX_TOKENS
     )
+
+
+async def test_generate_leaves_room_for_thinking_in_max_tokens(
+    async_session: object,
+    business_context: BusinessContext,
+    mock_prompt_loader: MagicMock,
+) -> None:
+    """Large org JSON + high-effort thinking share one output budget (ADR 0012)."""
+    client = _make_client(_VALID_LLM_RESPONSE)
+    gen = GeneratorOrgGeneration(client, mock_prompt_loader, async_session)  # type: ignore[arg-type]
+    await gen.generate(business_context)
+    assert client.complete.call_args.kwargs["max_tokens"] == 64000
+
+
+async def test_generate_uses_high_effort(
+    async_session: object,
+    business_context: BusinessContext,
+    mock_prompt_loader: MagicMock,
+) -> None:
+    client = _make_client(_VALID_LLM_RESPONSE)
+    gen = GeneratorOrgGeneration(client, mock_prompt_loader, async_session)  # type: ignore[arg-type]
+    await gen.generate(business_context)
+    assert client.complete.call_args.kwargs["effort"] == "high"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        LLMRefusalError(model="m", category="cyber", explanation=None),
+        LLMTruncatedError(
+            stop_reason="max_tokens", model="m", max_tokens=64000, output_tokens=64000
+        ),
+    ],
+)
+async def test_generate_propagates_llm_errors_without_retry(
+    async_session: object,
+    business_context: BusinessContext,
+    mock_prompt_loader: MagicMock,
+    error: Exception,
+) -> None:
+    """Refusal / truncation is not a JSON error: no corrective retry (ADR 0012)."""
+    client = MagicMock(spec=AnthropicClient)
+    client.complete = AsyncMock(side_effect=error)
+    gen = GeneratorOrgGeneration(client, mock_prompt_loader, async_session)  # type: ignore[arg-type]
+    with pytest.raises(type(error)):
+        await gen.generate(business_context)
+    assert client.complete.call_count == 1
 
 
 # ── Persistence: counts ──────────────────────────────────────────────────────

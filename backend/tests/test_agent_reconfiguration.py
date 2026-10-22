@@ -12,6 +12,7 @@ from adjents.agents.reconfiguration import AgentReconfiguration
 from adjents.db.tables import AgentSpecTable, AgentStateTable, MessageTable
 from adjents.errors import TeamSetupError
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.errors import LLMRefusalError
 from adjents.prompts.loader import PromptLoader
 
 
@@ -161,3 +162,42 @@ async def test_extraction_raises_team_setup_error_after_max_retries(
     await reconf.start()
     with pytest.raises(TeamSetupError):
         await reconf.apply_changes()
+
+
+# ---------------------------------------------------------------------------
+# LLM call contract (ADR 0012)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_every_llm_call_uses_medium_effort(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    coo_id = mini_org["coo_id"]
+    mock_complete = AsyncMock(
+        side_effect=["Hello.", "Sure, noted!", '{"agent_updates": []}']
+    )
+    reconf = _make_reconf(coo_id, async_session, stub_prompt_loader, mock_complete)
+    await reconf.start()
+    await reconf.reply("Please be more concise.")
+    await reconf.apply_changes()
+    efforts = [call.kwargs["effort"] for call in mock_complete.call_args_list]
+    assert efforts == ["medium"] * 3
+
+
+@pytest.mark.asyncio
+async def test_extraction_refusal_propagates_without_retry(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    coo_id = mini_org["coo_id"]
+    refusal = LLMRefusalError(model="m", category="general_harms", explanation=None)
+    mock_complete = AsyncMock(side_effect=["Hello.", refusal])
+    reconf = _make_reconf(coo_id, async_session, stub_prompt_loader, mock_complete)
+    await reconf.start()
+    with pytest.raises(LLMRefusalError):
+        await reconf.apply_changes()
+    assert mock_complete.call_count == 2

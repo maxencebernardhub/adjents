@@ -19,6 +19,7 @@ from adjents.db.tables import (
 from adjents.errors import TeamSetupError
 from adjents.generator.team_setup import TeamSetupOrchestrator
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.errors import LLMRefusalError
 from adjents.prompts.loader import PromptLoader
 
 
@@ -1295,3 +1296,63 @@ async def test_coo_only_org_validate_team_triggers_go_live(
     spec_row = await async_session.get(AgentSpecTable, coo_id)
     assert spec_row is not None
     assert spec_row.is_paused is False
+
+
+# ---------------------------------------------------------------------------
+# LLM call contract (ADR 0012)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_every_llm_call_uses_medium_effort(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    """Covers every call site: fresh start, resume, reply, next sub-agent intro,
+    subtree summary and extraction."""
+    coo_id = mini_org["coo_id"]
+    n1_id = mini_org["n1_id"]
+    mock_complete = AsyncMock(
+        side_effect=[
+            "Hello, I'm Jordan.",
+            "Resuming our conversation.",
+            "Sure, noted!",
+            "Here is my summary.",
+            '{"agent_updates": []}',
+            "Hello, I'm Alex.",
+            "Hello, I'm Sam.",
+            "Finance team summary.",
+        ]
+    )
+    orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
+    session = await orch.start_session()
+    await orch.start_agent_conversation(session.id, coo_id)
+    await orch.start_agent_conversation(session.id, coo_id)  # resume
+    await orch.reply(session.id, coo_id, "Please be more concise.")
+    await orch.complete_current_agent(session.id, coo_id)
+    await orch.validate_team(session.id, coo_id)
+    await orch.start_agent_conversation(session.id, n1_id)
+    await orch.complete_current_agent(session.id, n1_id)  # opens N-2
+    await orch.complete_current_agent(session.id, n1_id)  # final summary
+    efforts = [call.kwargs["effort"] for call in mock_complete.call_args_list]
+    assert efforts == ["medium"] * 8
+
+
+@pytest.mark.asyncio
+async def test_extraction_refusal_propagates_without_retry(
+    async_session: AsyncSession,
+    stub_prompt_loader: PromptLoader,
+    mini_org: dict[str, str],
+) -> None:
+    """Only invalid JSON is retried; a refusal surfaces unchanged (ADR 0012)."""
+    coo_id = mini_org["coo_id"]
+    refusal = LLMRefusalError(model="m", category="general_harms", explanation=None)
+    mock_complete = AsyncMock(side_effect=["Hello.", "Summary.", refusal])
+    orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
+    session = await orch.start_session()
+    await orch.start_agent_conversation(session.id, coo_id)
+    await orch.complete_current_agent(session.id, coo_id)
+    with pytest.raises(LLMRefusalError):
+        await orch.validate_team(session.id, coo_id)
+    assert mock_complete.call_count == 3
