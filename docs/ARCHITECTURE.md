@@ -106,8 +106,9 @@ requires `_MAX_TOKENS = 32000` for complex org JSONs (10+ domains). Streaming
 unconditionally removes this ceiling, keeps the `complete()` signature unchanged,
 and future-proofs the client against SDK threshold changes. See ADR 0007.
 
-The agent loop, message bus, router, and scheduler are written from scratch. Each
-module is 100–300 lines. We keep full control and avoid dependency lock-in.
+The agent loop, message bus, router, and scheduler are written from scratch, as
+small single-responsibility modules (300 lines = review trigger, 500 = hard limit —
+see `.claude/CLAUDE.md`). We keep full control and avoid dependency lock-in.
 
 ---
 
@@ -117,6 +118,54 @@ module is 100–300 lines. We keep full control and avoid dependency lock-in.
 for all data contracts means one system handles validation, serialization, and type
 safety across the entire backend. No impedance mismatch between the API layer and
 the business logic layer.
+
+### Agents are data, not code
+
+**What "agents as code" would mean**: one Python class per agent, each with its own
+hard-coded behavior — `class FinanceAgent(BaseAgent)` overriding a `think()` method
+with finance-specific logic, `class SalesAgent(BaseAgent)` with another, and so on.
+This is the usual shape of hand-built multi-agent systems, where the developer knows
+the team in advance.
+
+**Why it is impossible here**: in Adjents, agents do not exist before onboarding.
+The Generator Agent (an LLM) invents the org at runtime, from the user's interview:
+one user gets a "Wedding Planning Lead", another a "Grant Applications Specialist".
+No class can be written in advance for an agent nobody knows yet. The only way to
+keep "one class per agent" would be to have the LLM generate Python code and execute
+it — a major security risk (arbitrary code running on the user's machine), and code
+that is untested, untyped and unreviewed.
+
+**What an agent is instead**: a set of records, all keyed by the agent's `id`:
+
+- one `AgentSpec` row in SQLite — identity, role, responsibilities, hierarchy
+  position, schedule (see below);
+- its `Skill` rows (`skill_ids`);
+- one `AgentState` row — runtime status;
+- one namespaced Chroma collection — its memory (§7).
+
+Prompts are shared templates per agent type (`prompts/agent/`, `prompts/coo/`),
+rendered with the agent's fields. Behavior comes from one generic agent loop (§5)
+that reads these records and feeds them to the LLM.
+
+**Impact**:
+
+- Creating an agent = inserting rows. The Generator Agent outputs JSON, validated
+  by Pydantic, then persisted — no code is generated, nothing is executed.
+- Reconfiguring an agent (ADR 0009) = a SQL `UPDATE`. No redeploy, no restart.
+- One agent loop to write, type-check and test, whatever the size of the org.
+
+**Trade-offs**:
+
+- Every behavioral difference between agents must be expressible through fields,
+  prompts and skills. There is no escape hatch for bespoke per-agent logic.
+- The weight of agent quality rests on prompt engineering and on the quality of the
+  generated specs, not on code.
+- Special cases are expressed as data, never as a subclass. Example: the COO is an
+  ordinary `AgentSpec` with `level == 0`; its specific behavior comes from its
+  prompts (`prompts/coo/`) and from code paths that branch on `level`, not from a
+  `COOAgent` class.
+
+See ADR 0010.
 
 ### `AgentSpec`
 
@@ -415,35 +464,100 @@ Called once at FastAPI startup (`lifespan`). All agent loops and API routes use
 
 ## 4. Inter-agent messaging
 
-All agent-to-agent and agent-to-user communication goes through a **typed async
-message bus** — never direct method calls between agents.
+All agent-to-agent and agent-to-user communication goes through **typed async
+message passing** — never direct method calls between agents.
 
-**Why not direct calls**: direct calls couple agents to each other, make testing hard
-(you can't isolate one agent without instantiating all the others), and block the
-event loop while waiting for a response. A message bus gives us:
+> **Status: not implemented yet.** The `Message` and `Conversation` models
+> (`messaging/models.py`) and their tables exist. The `MessageDispatcher` described
+> below does not: it lands with the agent loop. Today's user ↔ agent conversations
+> (onboarding interview, team setup, reconfiguration) call the LLM directly and
+> persist each turn as a `Message` row — no agent loop runs yet, so no routing is
+> needed.
 
-- **Inspectability**: every interaction is a logged `Message` record
-- **Replayability**: a session can be reproduced from its message history
-- **Testability**: agents can be tested in isolation by injecting a mock dispatcher
-- **Async-friendliness**: no agent blocks while another is thinking
+### What "typed message passing" means
 
-### v0.1 implementation: in-process async dispatcher
+**Message passing**: an agent never calls a method on another agent
+(`finance_agent.compute_invoice(...)`). It builds a `Message` object and drops it
+into the recipient's mailbox, then carries on with its own work. The recipient reads
+its mailbox when it is ready. The analogy is email versus a phone call: a phone call
+blocks both parties until it ends; an email is asynchronous — the sender does not
+wait, and the recipient answers when it can.
 
-Each agent has a dedicated `asyncio.Queue`. A central `MessageDispatcher` routes all
-messages:
+**Typed**: a message is not a free-form `dict` but a Pydantic model (§3):
+
+```python
+class Message(BaseModel):
+    id: str
+    from_agent: str                  # agent_id, "user", or "system"
+    to_agent: str                    # agent_id or "user"
+    content: str
+    metadata: dict[str, Any]         # routing context, tracing
+    parent_message_id: str | None    # threading: the message this one answers
+    created_at: datetime
+```
+
+Pydantic validates every message at runtime (a malformed message fails loudly at
+creation, not three agents later), and mypy checks every producer and consumer
+statically.
+
+### Planned design: in-process async dispatcher
+
+Each agent gets a dedicated `asyncio.Queue` (its mailbox). A central
+`MessageDispatcher` routes every message:
 
 ```text
 Agent A  →  dispatcher.send(message)  →  Agent B's queue
                                       →  User WebSocket (if to_agent == "user")
 ```
 
-No agent holds a direct reference to another agent. The dispatcher is the single
-routing point.
+No agent holds a reference to another agent. The dispatcher is the single routing
+point; agents only know IDs.
 
-**Why asyncio.Queue and not an external broker (Redis, NATS)**: for a local,
-single-user application, an in-process queue is simpler, faster, and has zero
-operational overhead. The `MessageDispatcher` interface is designed to be swappable:
-v0.2+ can replace the transport with Redis Pub/Sub without changing agent code.
+### Why not direct calls
+
+Agents are concurrent asyncio tasks (§5), each spending most of its time waiting on
+LLM calls. With direct calls:
+
+- **Blocking**: if agent A calls agent B and awaits the result, A is stuck for the
+  whole duration of B's LLM call — A cannot process its own mailbox meanwhile.
+- **Deadlocks**: if A waits for B while B waits for A (e.g. a Sales lead asks
+  Finance for a price while Finance asks Sales for the client's volume), both wait
+  forever.
+- **No trace**: a method call leaves no record. Nobody — neither the user nor a
+  developer — can see who asked what.
+
+With the dispatcher:
+
+- **Inspectability**: every interaction is a persisted `Message` record; the UI can
+  show agent conversations and meetings live (VISION §1.6).
+- **Replayability**: a session can be reproduced from its message history.
+- **Testability**: an agent is tested in isolation by injecting a fake dispatcher
+  that records sent messages — no other agent needs to exist.
+- **Async-friendliness**: no agent blocks while another is thinking.
+
+### Trade-offs
+
+- **Indirection**: following a flow means following messages across mailboxes,
+  not reading a call stack.
+- **Request/response correlation is manual**: when A asks B a question, B's answer
+  arrives later as just another message. A matches it to its question through
+  `parent_message_id`. A circular wait (A waits for B's answer, B for A's) is still
+  logically possible, but neither agent is frozen: both keep processing their
+  mailboxes, and the pending question is visible in the message log.
+- **Async debugging is harder**: a bug may surface in B long after A sent the
+  faulty message; message logs replace stack traces.
+- **An in-memory queue is lost on crash**: an `asyncio.Queue` lives in the process.
+  The dispatcher must therefore persist every message to SQLite before enqueuing
+  it, so that pending messages can be re-enqueued on restart — consistent with
+  "SQLite is the source of truth" (§11).
+
+### Why `asyncio.Queue` and not an external broker (Redis, NATS)
+
+For a local, single-user application, an in-process queue is simpler, faster, and
+has zero operational overhead. The `MessageDispatcher` interface is designed to be
+swappable: the transport can later be replaced by Redis Pub/Sub without changing
+agent code — relevant only for a hosted, multi-tenant (SaaS) version, where agents
+might run in several processes or on several machines.
 
 ---
 
@@ -485,6 +599,10 @@ single extraction LLM call applies them. Structural fields (`domain`, `level`,
 
 ### The agent loop
 
+> **Status: not implemented yet** (`scheduler/` is empty). The lifecycle above is
+> implemented up to go-live (team setup, reconfiguration); the loop below is the
+> planned design.
+
 Each agent runs as a persistent `asyncio` coroutine. All loops are started at server
 launch and re-created from SQLite on restart (no state is lost).
 
@@ -504,21 +622,60 @@ Each iteration:
   6. Sleep scheduler_interval_seconds → repeat
 ```
 
+> **Open question — task queue**: step 4 (and VISION §3.3) assume a per-agent,
+> priority-ordered task queue, but no `Task` entity exists yet in the models (§3).
+> Its lifecycle, priority and links to `AgentState`, `BlockingQuestion` and
+> `Deliverable` will be designed in ADR 0011 (planned); this loop will be updated
+> accordingly.
+
 ### Why asyncio tasks and not APScheduler or Celery
 
-**APScheduler** would add value if we needed cron-style triggers ("run every first
-Monday of the month") or automatic job persistence across restarts. We don't need
-either: our schedule is a simple interval, and restart resilience is handled by
-re-reading agent specs from SQLite on startup — 5 lines of code.
+**What APScheduler is**: a Python library that runs jobs on a schedule inside your
+process — cron-style rules ("every Monday at 09:00", "on the first day of the
+month") or fixed intervals — with optional job persistence in a database, so that
+schedules survive a restart.
 
-**Celery + Redis** is a distributed task queue designed for multi-process, multi-server
-workloads. For a local, single-user application, it introduces two extra services to
-run and a significant operational burden with no benefit.
+**What Celery is**: a distributed task queue. The application pushes jobs into a
+broker (Redis, RabbitMQ); separate worker processes — possibly on other machines —
+pull jobs from the broker and execute them. It is the standard tool for background
+jobs in large web applications (sending emails, generating reports), with Celery
+Beat for periodic jobs.
 
-**asyncio tasks** are already part of FastAPI's runtime. They are lightweight, fully
-async, and give us complete control. Pause, resume, and work hours are implemented
-as simple flag checks at the start of each loop iteration — no scheduler abstraction
-needed.
+**Why neither here**:
+
+- APScheduler's value lies in calendar rules and job persistence. Our schedule is
+  an interval (`scheduler_interval_seconds`) plus a daily window (`work_hours`), and
+  restart resilience comes from re-creating one loop per `AgentSpec` row at
+  startup — a few lines of code.
+- Celery adds two services to install and run (a broker and workers) — a
+  significant operational burden for a local, single-user application, with no
+  benefit at this scale.
+- **asyncio tasks** are already FastAPI's runtime. One task per agent is
+  lightweight and gives full control over the loop.
+
+**Impact of the asyncio choice**:
+
+- No extra infrastructure: everything runs inside the FastAPI process.
+- Pause, resume and work hours are flag checks at the start of each iteration
+  (`is_paused` read from SQLite) — no scheduler API to call.
+- Agent loops, the dispatcher (§4) and the WebSocket handler share one event loop,
+  so messages move between them through in-process queues, with no serialization.
+
+**Trade-offs**:
+
+- **Single process**: if it crashes, every agent loop stops at once. Loops are
+  re-created from SQLite on restart; an LLM call in flight at crash time is lost
+  (persisted messages, §4, limit the damage).
+- **One event loop for every agent**: any blocking or CPU-heavy call stalls all
+  agents at once — hence the `async def`-by-default rule for I/O. The workload is
+  I/O-bound (waiting on LLMs), which is what asyncio handles well.
+- **No scaling across machines**: all agents live in one process on one machine.
+- **Calendar rules are hand-written**: anything beyond a daily window (day-of-week
+  schedules, multiple windows) must be coded by hand — exactly what APScheduler
+  provides for free.
+- **To reconsider for a hosted, multi-tenant version**: thousands of agents across
+  many users do not fit in one process. A distributed worker model (Celery or
+  similar) with an external broker (Redis, §4) would then become relevant.
 
 ### Pause and work hours
 

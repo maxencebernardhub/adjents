@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-10-16 | Branch: feat/post-generation-team-setup | Milestone: v0.1 — MVP
+> Updated: 2026-10-22 | Branch: docs/architecture-rationale | Milestone: v0.1 — MVP
 
 ---
 
@@ -17,7 +17,7 @@ the Next steps plan below.
 | Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | — (step 4) | — (step 4) | ✅ |
 | Generator Agent — interview | ✅ | ✅ | ✅ | ✅ | — (step 6) | ✅ ¹ | ✅ |
 | Generator Agent — org generation | ✅ | ✅ | ✅ | ✅ | — (step 7) | ✅ ¹ | ✅ |
-| Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (step 8) | ⏳ (step 0) |
+| Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (step 8) | ✅ |
 | Task entity (per-agent task queue) | — (step 5) | — | — | n/a | — | — | — |
 | LLM router | — (step 10) | — | ⏳ (Anthropic only) | — | — | — | — |
 | LLM clients (Ollama, Anthropic, OpenAI, Google) | — (step 10) | — | ⏳ (Anthropic only) | — | — | — | — |
@@ -596,7 +596,51 @@ and agree on a detailed, step-by-step action plan.
   frontend commands (`pnpm lint`, `format:check`, `typecheck`, `test --run`) now
   pass locally.
 
-**Stopped at:** step 0.6 — waiting for PR #1 CI to go green, then merge.
+**Stopped at:** step 0 complete — PR #1 merged on 2026-10-16 (merge commit `897b6fe`),
+branch deleted, CI green on main. Next: step 1.
+
+---
+
+## Last session — 2026-10-22
+
+Step 1 — architecture rationale documented (branch `docs/architecture-rationale`).
+Documentation only, no code change.
+
+### Done (2026-10-22)
+
+- Step 0.6 confirmed: PR #1 merged (`897b6fe`), CI green on main.
+- ARCHITECTURE §3: new subsection "Agents are data, not code" (what agents-as-code
+  would mean, why it is impossible, what an agent is instead, impact, trade-offs).
+  Placed inside §3 rather than as a new top-level section, so that the §-numbers
+  referenced by ADRs and specs stay valid.
+- **ADR 0010** — Agents are data, not code (recorded retroactively: the decision is
+  structural, hard to reverse, had real alternatives, and will be challenged by
+  executable skills in v0.2). The planned `Task` ADR becomes **ADR 0011**.
+- ARCHITECTURE §4 rewritten: "Status: not implemented yet" for the
+  `MessageDispatcher`; typed message passing explained (mailbox / email analogy,
+  Pydantic `Message`); why not direct calls (blocking, deadlocks, no trace);
+  trade-offs (indirection, manual correlation via `parent_message_id`, async
+  debugging, persist messages before enqueuing); Redis path for a hosted version.
+- ARCHITECTURE §5: "Status: not implemented yet" for the agent loop; open-question
+  pointer for the missing `Task` entity (ADR 0011); "Why asyncio tasks and not
+  APScheduler or Celery" rewritten (definitions, impact, trade-offs including the
+  shared event loop, multi-tenant outlook).
+- ARCHITECTURE §2: "Each module is 100–300 lines" aligned with the new file size rule.
+- `.claude/CLAUDE.md`: one-line "Why:" pointer per architecture rule; "prompt file"
+  → "shared prompt templates" (matches the code); file size rule + docstring
+  convention (replace "No >300-line files"); `@` imports of VISION / ARCHITECTURE /
+  PROJECT_STATE replaced by plain paths (an `@path` import loads the whole file into
+  the context — ~2,400 lines); pre-commit command aligned to
+  `make lint && make typecheck && make test`.
+
+### Decisions (2026-10-22)
+
+- Placement of "Agents are data, not code" inside §3 (no renumbering).
+- "SQLite is the source of truth" to be promoted to a cross-cutting principle →
+  step 9 (see Technical debt).
+- Outdated `google-generativeai` name → fixed in step 2.1.
+
+**Stopped at:** step 1 complete — PR open, waiting for CI, then merge.
 
 ---
 
@@ -629,25 +673,25 @@ Branch: `feat/post-generation-team-setup`
   main had been red since 2026-06-02): `.prettierignore` (pnpm-owned files),
   `src/vite-env.d.ts` (Vite client types), vitest `--passWithNoTests` until real
   frontend tests exist
-- [ ] 0.6 PR #1 CI green → merge (merge commit), delete the branch, pull main
+- [x] 0.6 PR #1 CI green → merge (merge commit), delete the branch, pull main
 
 ### Step 1 — Document architecture rationale
 
 Branch: `docs/architecture-rationale`
 
-- [ ] 1.1 ARCHITECTURE: new section "Agents are data, not code" — what agent-as-code
+- [x] 1.1 ARCHITECTURE: new section "Agents are data, not code" — what agent-as-code
   would mean, why it is impossible here (agents are generated at runtime), impact
   (one generic loop, reconfiguration = DB update), trade-offs (behavior must be
   expressible through fields + prompts + skills)
-- [ ] 1.2 ARCHITECTURE §4 Messaging: typed message passing explained (`Message`
+- [x] 1.2 ARCHITECTURE §4 Messaging: typed message passing explained (`Message`
   Pydantic model, mailbox analogy), `MessageDispatcher` role (not implemented yet),
   why (concurrent asyncio tasks, deadlocks, logging/replay, isolated tests), trade-offs
   (indirection, request/response correlation via `parent_message_id`, async debugging,
   in-memory queue ⇒ persist messages), Redis path for a hosted version
-- [ ] 1.3 ARCHITECTURE §5: what APScheduler and Celery are, impact of the asyncio
+- [x] 1.3 ARCHITECTURE §5: what APScheduler and Celery are, impact of the asyncio
   choice, trade-offs (single process, no multi-machine scaling, hand-written calendar
   rules), what would change for a hosted multi-tenant version
-- [ ] 1.4 CLAUDE.md: one-line pointer to ARCHITECTURE for each architecture rule;
+- [x] 1.4 CLAUDE.md: one-line pointer to ARCHITECTURE for each architecture rule;
   file size rule; docstring convention
 
 ### Step 2 — Update dependencies
@@ -656,7 +700,9 @@ Branch: `chore/deps-update`
 
 - [ ] 2.1 Backend: bump every dependency in `pyproject.toml` to the latest stable
   version (`anthropic`, `openai`, `google-genai`, `pydantic`, `sqlmodel`, `chromadb`,
-  `fastapi`, dev tools…); `uv lock --upgrade` + `uv sync --all-groups`
+  `fastapi`, dev tools…); `uv lock --upgrade` + `uv sync --all-groups`; fix the
+  outdated `google-generativeai` name (actual dependency: `google-genai`) in
+  `.claude/CLAUDE.md` rule 6, ARCHITECTURE §2 and ADR 0001 (amend, never delete)
 - [ ] 2.2 Check PyPI for a 1.x major release of the `anthropic` Python SDK; if
   released, follow its migration guide (breaking changes)
 - [ ] 2.3 Frontend: bump dependencies; resolve tech debt ESLint 10 (`eslint.config.js`)
@@ -700,7 +746,7 @@ Branch: `feat/task-entity` — full `/feature` workflow
 - [ ] 5.1 Brainstorming: lifecycle and statuses, priority and reordering (VISION §3.3),
   requester, links to `AgentState` (`current_task_summary` → `current_task_id`?),
   `BlockingQuestion`, `Deliverable`, `Project` (v0.2), retrieval queries
-- [ ] 5.2 ADR 0010
+- [ ] 5.2 ADR 0011
 - [ ] 5.3 Feature Brief + Implementation Plan
 - [ ] 5.4 TDD: Pydantic model + SQLModel table + convert functions + tests
 - [ ] 5.5 Update ARCHITECTURE §3 and §5 (agent loop step 4)
@@ -788,6 +834,10 @@ Branch: `feat/llm-router` — full `/feature` workflow
 - ADR 0007 rationale inaccurate (see Last session 2026-10-16) → **step 3.3**
 - No `Task` entity despite the per-agent task queue in VISION §3.3 / ARCHITECTURE §5
   → **step 5**
+- ARCHITECTURE: "SQLite is the source of truth" is only stated in §11 (Frontend →
+  State principle) although it is cross-cutting (§4 message persistence, §5 loop
+  restart, ADR 0004) — promote it to a cross-cutting principle (e.g. §3 Persistence
+  layer) → **step 9**
 - `resume()` in `GeneratorInterview`: N sequential SELECTs (one per message) — acceptable
   for v0.1 short conversations, replace with `WHERE id IN (...)` → **step 6.2**
 - Code review findings on team setup (B1, B2, A1–A5, N1–N3) → **step 8**
@@ -828,5 +878,6 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-28 | `sqlmodel.select` required (not `sqlalchemy.select`) for typed SQLModel `exec()` results | `sqlalchemy.select` returns `Row` tuples; `sqlmodel.select` returns scalar model instances |
 | 2026-10-16 | One branch open at a time; every merge through a GitHub PR (merge commit) | No parallel branches ⇒ no merge conflicts; PR history doubles as portfolio evidence |
 | 2026-10-16 | File size rule: source 300 lines = review trigger, 500 = hard limit (docstrings included); one test file per source module | Line count is a proxy for single responsibility; must not push towards stripping documentation |
-| 2026-10-16 | `Task` becomes a first-class persisted entity (ADR 0010 in step 5) | Task lifecycle (status, priority, requester, links) does not belong in the hot, frequently broadcast `AgentState` record |
+| 2026-10-16 | `Task` becomes a first-class persisted entity (ADR 0011 in step 5) | Task lifecycle (status, priority, requester, links) does not belong in the hot, frequently broadcast `AgentState` record |
 | 2026-10-16 | `uv run` is the only way to run Python tools; IDE venv auto-activation disabled | A stale activated venv broke the environment after the project move |
+| 2026-10-22 | Agents are data, not code — recorded retroactively (ADR 0010) | Agents are invented by an LLM at runtime: no class can pre-exist them, and executing generated code is a major security risk |

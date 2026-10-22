@@ -5,7 +5,8 @@ PROJECT_TYPE: development
 AI agent platform that generates a full team of AI agents for solopreneurs from a
 single onboarding conversation. No templates, no graph builders, no YAML.
 
-Full vision: @./docs/VISION.md — Architecture: @./docs/ARCHITECTURE.md — State: @./PROJECT_STATE.md
+Full vision: `docs/VISION.md` — Architecture: `docs/ARCHITECTURE.md` — State: `PROJECT_STATE.md`
+(read on demand, not imported, to keep the context small)
 
 ## Status
 
@@ -34,18 +35,22 @@ make typecheck  # mypy --strict + tsc --noEmit
 
 ## Architecture rules (non-negotiable)
 
-1. **Agents are data, not code.** Agent = AgentSpec (Pydantic) + prompt file + memory
-   namespace + skill list. Never subclass per agent.
+1. **Agents are data, not code.** Agent = AgentSpec (Pydantic) + shared prompt
+   templates + memory namespace + skill list. Never subclass per agent.
+   Why: ARCHITECTURE §3 "Agents are data, not code", ADR 0010.
 2. **All agent communication is async typed message-passing** via the MessageDispatcher.
-   Never direct method calls between agents.
+   Never direct method calls between agents. Why: ARCHITECTURE §4.
 3. **Memory = per-agent (namespaced Chroma collection) + global KB (shared collection).**
+   Why: ARCHITECTURE §7.
 4. **The LLMRouter decides every model choice.** No agent picks its own model.
-   sensitivity=high → local only. Generator Agent → always cloud.
+   sensitivity=high → local only. Generator Agent → always cloud. Why: ARCHITECTURE §8.
 5. **Local-first.** Must work 100% offline with Ollama. Cloud is an enhancement.
+   Why: ARCHITECTURE §8.
 6. **No AI framework.** Use official LLM SDKs (anthropic, openai, google-generativeai),
    chromadb, and sqlmodel. The agent loop, bus, and router are written from scratch.
+   Why: ARCHITECTURE §2, ADR 0001.
 7. **Agent loop = asyncio task per agent.** Pause/resume via is_paused flag in SQLite.
-   Work hours via work_hours field. No APScheduler, no Celery.
+   Work hours via work_hours field. No APScheduler, no Celery. Why: ARCHITECTURE §5.
 
 ## What NOT to do
 
@@ -53,13 +58,19 @@ make typecheck  # mypy --strict + tsc --noEmit
   outside `./data/`). That is v0.2 scope.
 - No LangChain, LangGraph, LlamaIndex, CrewAI, or AutoGen. See ARCHITECTURE.md §2.
 - No prompt strings in Python source. Prompts live in `backend/adjents/prompts/*.md`.
-- No `any` in TypeScript. No Python subclass per agent. No >300-line files.
+- No `any` in TypeScript. No Python subclass per agent.
 - No feature without a test. No dependency added without an explicit request.
 
 ## Conventions
 
 - Type-hint everything. `mypy --strict` must pass at all times.
 - `async def` by default for I/O. Sync only for pure CPU work.
+- File size (docstrings included — never strip docs to fit): source modules —
+  300 lines = review trigger ("more than one responsibility?"), 500 = hard limit;
+  tests — one test file per source module; smoke scripts — no cap, but extract shared
+  helpers to `scripts/_common.py` beyond 400 lines; docs — no limit.
+- Docstrings: Google style. Module docstring = purpose + place in the flow + entry
+  points + related ADRs. Comments explain *why*, not *what*.
 - Prompts: `backend/adjents/prompts/<agent_type>/<purpose>.md`, loaded via PromptLoader.
 - ADRs: `docs/decisions/NNNN-title.md`. Never delete — mark Deprecated or Superseded.
 - Feature specs: `docs/specs/YYYY-MM-DD-feature-name.md`.
@@ -68,7 +79,7 @@ make typecheck  # mypy --strict + tsc --noEmit
 
 - Branches: `feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `test/`
 - Commits: conventional (`feat:`, `fix:`, `docs:`, `chore:`, `test:`, `refactor:`)
-- Always run `make lint && make test` before committing.
+- Always run `make lint && make typecheck && make test` before committing.
 
 ## Working rules
 
