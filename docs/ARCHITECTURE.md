@@ -772,6 +772,15 @@ cloud) must be enforced consistently. If agents chose their own models, a single
 misconfiguration could send sensitive data to a cloud provider. Centralization also
 makes cost tracking and routing rule changes easy — one place to update.
 
+> **Status: minimal implementation.** `router/router.py` only serves the two system
+> roles that exist today, through one method per role: `get_generator_client()`
+> (`claude-opus-5-5`) and `get_team_setup_client()` (`claude-sonnet-5-5`). Callers
+> never name a model. The request-based design below is a sketch, revisited in step
+> 10. Inputs under discussion: per-agent reasoning tier and task complexity (step 5),
+> per-role provider selection among Anthropic / OpenAI / Gemini, fallback policy,
+> per-call tracing, and sampling parameters (e.g. temperature) for non-Anthropic
+> providers.
+
 ```python
 class RouterRequest(BaseModel):
     agent_id: str
@@ -781,19 +790,23 @@ class RouterRequest(BaseModel):
 
 class RouterDecision(BaseModel):
     provider: str      # "ollama", "anthropic", "openai", "google"
-    model: str         # e.g. "qwen2.5:7b", "claude-opus-4-7", "gpt-4o"
-    temperature: float
+    model: str         # e.g. "qwen3.5:9b", "claude-opus-5-5"
+    effort: Effort     # provider-neutral; each client maps it (ADR 0012)
     max_tokens: int
     reason: str        # logged for traceability
 ```
+
+`temperature` is deliberately absent: on the Anthropic API version used by the SDK
+(`2026-10-21`), sending it returns a 400 on every model. Effort is the main control.
 
 ### v0.1 routing rules (deterministic)
 
 | Condition | Provider | Rationale |
 | --- | --- | --- |
-| Generator Agent | Cloud — claude-opus-4-7 | One-shot, highest quality required |
+| Generator Agent | Cloud — `claude-opus-5-5` | One-shot, highest quality required |
+| Team setup / reconfiguration | Cloud — `claude-sonnet-5-5` | Multi-turn conversations: lower cost and latency |
 | sensitivity = high | Local Ollama | Privacy: sensitive data never leaves the machine |
-| complexity = high | Cloud — claude-sonnet-4-6 | Local models insufficient for complex reasoning |
+| complexity = high | Cloud — `claude-sonnet-5-5` | Local models insufficient for complex reasoning |
 | All other tasks | Local Ollama | Fast, private, offline-capable, free |
 
 The user can set a preferred cloud provider (Anthropic / OpenAI / Google) in settings.
@@ -875,9 +888,13 @@ prompts/agent/memory_summary.md
 ---
 version: 1
 description: "Generator Agent onboarding interview"
-model_hint: "claude-opus-4-7"
+model_hint: "claude-opus-5-5"
 ---
 ```
+
+`model_hint` is **informational only**: no code reads it, and the model is always
+chosen by `LLMRouter` (rule 4). Whether the router consumes the hint or it is
+removed is decided in step 10.
 
 ### How prompts are loaded
 

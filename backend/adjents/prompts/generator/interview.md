@@ -1,7 +1,7 @@
 ---
 version: 1
 description: "Generator Agent onboarding interview"
-model_hint: "claude-opus-4-7"
+model_hint: "claude-opus-5-5"
 kickoff_message: "Hello."
 ---
 

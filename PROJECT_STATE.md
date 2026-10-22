@@ -840,7 +840,7 @@ Branch: `chore/claude-5-5-migration`
   ARCHITECTURE §2; **amend** ADR 0007 (rationale correction + Option B "no
   workaround" correction — never delete); **amend** ADR 0008 (model + routing via
   `LLMRouter`)
-- [ ] 3.4 Model IDs: private constants in `router/router.py` + new
+- [x] 3.4 Model IDs: private constants in `router/router.py` + new
   `LLMRouter.get_team_setup_client()` (no hard-coded model ID outside the router);
   effort constants in each caller; smoke scripts get their clients from the router and
   print `client.model`; `model_hint` updated and documented as informational;
@@ -851,7 +851,8 @@ Branch: `chore/claude-5-5-migration`
   (`existing_tools`), so the interview never reaches `ready_to_generate` (seen in step
   2.5). Complete the scenario only (prompt audit = step 6.3): daily rate €450 (turn 5);
   Google Workspace `alex@luminescence.com` + Qonto business account (turn 6). If the
-  scenario is not enough, stop and ask
+  scenario is not enough, stop and ask — scenario completed, verified by the smoke
+  run in 3.5
 - [ ] 3.5 Re-run the smoke tests (paid — cost estimate approved first)
 
 ### Step 4 — Walkthrough: foundations
