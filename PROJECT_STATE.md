@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-10-22 | Branch: chore/deps-update | Milestone: v0.1 — MVP
+> Updated: 2026-10-22 | Branch: chore/claude-5-5-migration | Milestone: v0.1 — MVP
 
 ---
 
@@ -710,7 +710,41 @@ guide before upgrading.
 - Vite's type declarations reference `Buffer` (needs `@types/node`); hidden by
   `skipLibCheck: true`, so no package added.
 
-**Stopped at:** step 2 complete — PR open, waiting for CI, then merge.
+**Stopped at:** step 2 complete — PR #3 merged on 2026-10-22 (merge commit `53d4bd5`),
+branch deleted, CI green on main. Next: step 3.
+
+---
+
+## Last session — 2026-10-22 (step 3)
+
+Step 3 — migration to the Claude 5.5 generation (branch `chore/claude-5-5-migration`).
+Design session first: every LLM call, breaking change and SDK behavior reviewed against
+the `claude-api` skill and the installed SDK sources (`anthropic` 2.1.0), then each
+decision agreed one by one (see Decisions log, 2026-10-22, step 3).
+
+### Findings (2026-10-22, step 3)
+
+- Our calls never sent `thinking`, so Opus 4.7 / Sonnet 4.6 ran **without** thinking.
+  On Opus 5.5 / Sonnet 5.5 thinking is always on and counts toward `max_tokens`.
+- `get_final_text()` ignores `stop_reason`: a truncated or mid-stream-refused response
+  is returned as if complete (the JSON retry loops then feed it back to the model), and
+  a response with no text block (pre-output refusal, truncation during thinking)
+  raises an uncaught `RuntimeError`.
+- No assistant prefill, no `temperature` / `top_p` / `top_k`, no `tool_choice` are sent
+  (all would return 400). ARCHITECTURE §8 still sketches `RouterDecision.temperature`.
+- SDK non-streaming threshold re-verified in 2.1.0: `MODEL_NONSTREAMING_TOKENS` only
+  lists Opus 4.0 / 4.1; the expected-duration check (`3600 × max_tokens / 128000` s >
+  600 s ⇒ `ValueError`, i.e. > ~21,333) applies to every model, only for non-streaming
+  `create()` without an explicit timeout — so ADR 0007's "no workaround exists" is
+  also inaccurate (an explicit timeout bypasses the check).
+- Server-side `fallbacks` only exist on `client.beta.messages`, and only trigger on
+  refusals (not on overload / 5xx / rate limits).
+- `model_hint` in prompt frontmatter is read by no code; model IDs were duplicated in
+  the router, a smoke script literal, smoke docstrings / prints, prompts and docs.
+- VISION §1.2 lists a per-agent *complexity threshold* produced by the Generator; it
+  is missing from `AgentSpec`.
+
+**Stopped at:** decisions agreed and recorded — next: ADR 0012 (`/adr`), then 3.2 (TDD).
 
 ---
 
@@ -786,20 +820,37 @@ Branch: `chore/deps-update`
 
 Branch: `chore/claude-5-5-migration`
 
-- [ ] 3.1 Choose models per role together (proposal: Generator → Opus 5.5;
-  team-setup conversations + extraction → Sonnet 5.5)
-- [ ] 3.2 `AnthropicClient`: explicit `effort` (Opus 5.5 default is `medium`), review
-  `max_tokens` now that thinking is always on, handle `stop_reason == "refusal"` and
-  server-side fallbacks, confirm no `temperature` / assistant prefill is sent
-- [ ] 3.3 Re-verify the non-streaming threshold in the upgraded SDK; fix the
-  `anthropic_client.py` docstring and ARCHITECTURE §2; **amend** ADR 0007 (rationale
-  correction — never delete)
-- [ ] 3.4 Update model IDs in `router/router.py` and the 3 smoke scripts
+- [x] 3.1 Choose models per role: Generator (interview, extraction, org generation) →
+  `claude-opus-5-5`; team setup (conversations + extraction) → `claude-sonnet-5-5`.
+  These are the Anthropic defaults — selection among Anthropic / OpenAI / Gemini comes
+  in step 10, so `complete()` stays provider-neutral
+- [ ] 3.1b ADR 0012 — provider-neutral LLM call contract (via `/adr`, before 3.2)
+- [ ] 3.2 `AnthropicClient` (TDD): `Effort` type (`low` / `medium` / `high`, in
+  `adjents/llm/types.py`), `effort` required on every call (no client default); explicit
+  `thinking: {type: "adaptive", display: "summarized"}` + DEBUG logger
+  `adjents.llm.thinking`; `max_tokens` default 16000 (org generation 64000); read
+  `get_final_message()` and check `stop_reason` before the text → `LLMRefusalError` /
+  `LLMTruncatedError` / `LLMResponseError` (`adjents/llm/errors.py`), no retry and no
+  wrapping in callers; DEBUG log of `stop_reason` + `usage.output_tokens`, WARNING on
+  refusal / truncation (no content); read-only `model` property; confirmed: no prefill,
+  `temperature` or `tool_choice` sent; server-side fallbacks deferred to step 10
+- [ ] 3.3 Re-verify the non-streaming threshold in the upgraded SDK (done in the design
+  session); fix the `anthropic_client.py` docstring and ARCHITECTURE §2; **amend** ADR
+  0007 (rationale correction + Option B "no workaround" correction — never delete);
+  **amend** ADR 0008 (model + routing via `LLMRouter`)
+- [ ] 3.4 Model IDs: private constants in `router/router.py` + new
+  `LLMRouter.get_team_setup_client()` (no hard-coded model ID outside the router);
+  effort constants in each caller; smoke scripts get their clients from the router and
+  print `client.model`; `model_hint` updated and documented as informational;
+  `backend/README.md`; ARCHITECTURE §8 (IDs, `RouterDecision`: `temperature` →
+  `effort`, status note) and §9
 - [ ] 3.4b Fix `smoke_generator_interview.py`: the scripted Alex Chen scenario never
   gives the daily rate (`financial_goals`) nor the email / banking tools
   (`existing_tools`), so the interview never reaches `ready_to_generate` (seen in step
-  2.5); complete the scenario, and review the interview prompt if needed
-- [ ] 3.5 Re-run the smoke tests (paid)
+  2.5). Complete the scenario only (prompt audit = step 6.3): daily rate €450 (turn 5);
+  Google Workspace `alex@luminescence.com` + Qonto business account (turn 6). If the
+  scenario is not enough, stop and ask
+- [ ] 3.5 Re-run the smoke tests (paid — cost estimate approved first)
 
 ### Step 4 — Walkthrough: foundations
 
@@ -810,18 +861,30 @@ Branch: `refactor/walkthrough-foundations`
 - [ ] 4.2 Walkthrough: `db/` (`tables.py`, `convert.py`, `engine.py`) + tests
 - [ ] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
   `router/router.py` + tests
+- [ ] 4.3b Structured outputs: design a provider-neutral method (Pydantic model in →
+  validated instance out) and implement it for Anthropic (`output_config.format` /
+  `messages.parse()`); check in their docs only that OpenAI and Gemini offer an
+  equivalent; check compatibility with adaptive thinking. Adopted by callers in steps
+  6, 7, 8
 - [ ] 4.4 Docstrings + comments
 - [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004
 - [ ] 4.6 Code review
 - [ ] 4.7 Review findings together, fix with TDD
 
-### Step 5 — Task entity (per-agent task queue)
+### Step 5 — Task entity (per-agent task queue) + routing inputs
 
 Branch: `feat/task-entity` — full `/feature` workflow
 
 - [ ] 5.1 Brainstorming: lifecycle and statuses, priority and reordering (VISION §3.3),
   requester, links to `AgentState` (`current_task_summary` → `current_task_id`?),
   `BlockingQuestion`, `Deliverable`, `Project` (v0.2), retrieval queries
+- [ ] 5.1b Routing inputs (consumed by the router in step 10):
+  - task complexity as a routing input (`RouterRequest.complexity`), carried by `Task`
+  - per-agent reasoning tier in `AgentSpec` (VISION §1.2 "complexity threshold"):
+    abstract and provider-neutral (never a model ID), set by the Generator from the
+    agent's role and responsibilities — not from its hierarchy level — and adjustable
+    in team setup (non-structural field, ADR 0009). Produced in step 7, adjustable in
+    step 8. ADR to decide (model selection by agent tier and task complexity)
 - [ ] 5.2 ADR 0011
 - [ ] 5.3 Feature Brief + Implementation Plan
 - [ ] 5.4 TDD: Pydantic model + SQLModel table + convert functions + tests
@@ -837,7 +900,11 @@ Branch: `refactor/walkthrough-interview`
   `smoke_generator_interview.py`
 - [ ] 6.2 Tech debt: `resume()` N sequential SELECTs → single `WHERE id IN (...)`
   query (TDD, test asserting the query count)
-- [ ] 6.3 Prompt audit for Claude 5.5 (patterns written for 4.x models)
+- [ ] 6.2b Partial state: `reply()` persists the user message before the LLM call, so a
+  failed call (network, refusal, truncation) leaves the stored conversation ending with
+  an unanswered user message — decide the fix (TDD)
+- [ ] 6.3 Prompt audit for Claude 5.5 (patterns written for 4.x models); adopt
+  structured outputs (step 4.3b) for interview turns and `BusinessContext` extraction
 - [ ] 6.4 Docstrings + comments
 - [ ] 6.5 Spec review (against the 2026-05-20 Feature Brief) + code review, fixes
 
@@ -851,7 +918,8 @@ Branch: `refactor/walkthrough-org-generation`
 - [ ] 7.2 Split `org_generation.py` (435 lines) into a package by responsibility
   (draft: `models.py`, `validation.py`, `parsing.py`, `generator.py`); split the test
   file accordingly (one test file per module)
-- [ ] 7.3 Prompt audit for Claude 5.5
+- [ ] 7.3 Prompt audit for Claude 5.5; adopt structured outputs (step 4.3b); the
+  Generator assigns each agent's reasoning tier (step 5.1b) — prompt + validation
 - [ ] 7.4 Docstrings + comments
 - [ ] 7.5 Spec review (against the 2026-05-22 Feature Brief) + code review, fixes
 
@@ -871,6 +939,8 @@ Branch: `refactor/walkthrough-team-setup`
 - [ ] 8.4 Warnings A1–A5 (asserts as flow control, `validate_team` guard, circular
   import risk, misleading resumability, `reply()` before `start()` guard)
 - [ ] 8.5 Notes N1–N3: decide together (fix or accept)
+- [ ] 8.5b Adopt structured outputs (step 4.3b) for the adjustments extraction; team
+  setup / reconfiguration can adjust the agent's reasoning tier (step 5.1b)
 - [ ] 8.6 Smoke scripts: extract shared helpers to `scripts/_common.py` if > 400 lines
 - [ ] 8.7 Docstrings + comments
 - [ ] 8.8 New code review on the result, fixes
@@ -892,7 +962,31 @@ Branch: `docs/frontend-and-tooling`
 Branch: `feat/llm-router` — full `/feature` workflow
 
 - [ ] 10.1 Brainstorming: routing rules (complexity, `sensitivity=high` → local),
-  concurrency, startup staggering (ARCHITECTURE §8)
+  concurrency, startup staggering (ARCHITECTURE §8). Inputs agreed in step 3:
+  - **Per-role provider + model selection** for the Generator and team setup among
+    Anthropic / OpenAI / Gemini: where the user chooses (`.env` or settings UI),
+    defaults from the configured API keys; run the 3 smoke scripts per provider
+    before making a model a default; provider-specific prompt variants only if
+    measurements justify them; verify OpenAI / Gemini model IDs and prices then
+  - Contradiction to settle: "Ollama valid for fully local setups" (2026-05-20) vs
+    "Generator Agent → always cloud" (rule 4)
+  - Agent reasoning tier (step 5.1b) + task complexity + sensitivity + local-first →
+    model and/or effort; route team setup conversations by the agent's tier
+  - Move `effort` + `max_tokens` from caller constants into the router's per-role
+    table; the per-role `get_*_client()` methods become request-based routing
+  - Map each provider's effort control, refusal / truncation signals and HTTP errors
+    to the neutral contract (`Effort`, `LLMResponseError` family, ADR 0012);
+    sampling parameters (e.g. temperature) for non-Anthropic providers
+  - Fallback policy, two distinct cases: refusal fallback (Anthropic server-side
+    `fallbacks`, beta `server-side-fallback-2026-07-01`, `"default"` mode, Claude API
+    only, refusals only — vs cross-provider fallback via the router) and availability
+    fallback (overload, 5xx, rate limits after SDK retries — not covered by
+    Anthropic's feature)
+  - LLM observability: per-call trace (model, effort, usage, `stop_reason`, thinking
+    summary) captured at the router; storage and retention; sensitivity rules; reuse
+    for evals and for an agent-reasoning UI
+  - Prompt caching (measure `usage.cache_read_input_tokens` with the traces)
+  - `model_hint` in prompt frontmatter: consumed by the router, or removed
 - [ ] 10.2 OpenAI, Google and Ollama clients; model choice for each provider
 - [ ] 10.3 Local models: update Ollama; research recent models suited to 24 GB RAM;
   mini benchmark on Adjents tasks (JSON validity, instruction following, tokens/s);
@@ -911,7 +1005,8 @@ Branch: `feat/llm-router` — full `/feature` workflow
 - Ollama client planned on `httpx` (ADR 0001), while `anthropic` / `openai` moved to
   `httpx2` because `httpx` is described upstream as no longer actively maintained —
   decide `httpx` vs `httpx2` (ADR candidate) → **step 10**
-- ADR 0007 rationale inaccurate (see Last session 2026-10-16) → **step 3.3**
+- ADR 0007 rationale inaccurate (see Last session 2026-10-16 and 2026-10-22, step 3)
+  → **step 3.3**
 - No `Task` entity despite the per-agent task queue in VISION §3.3 / ARCHITECTURE §5
   → **step 5**
 - ARCHITECTURE: "SQLite is the source of truth" is only stated in §11 (Frontend →
@@ -921,6 +1016,24 @@ Branch: `feat/llm-router` — full `/feature` workflow
 - `resume()` in `GeneratorInterview`: N sequential SELECTs (one per message) — acceptable
   for v0.1 short conversations, replace with `WHERE id IN (...)` → **step 6.2**
 - Code review findings on team setup (B1, B2, A1–A5, N1–N3) → **step 8**
+- VISION §1.2 lists a per-agent *complexity threshold* produced by the Generator; it is
+  missing from `AgentSpec` → designed in **step 5.1b**, produced by the Generator in
+  **step 7**, adjustable in **step 8**, consumed by the router in **step 10**
+- `effort` and `max_tokens` live as constants in each caller (interim, step 3) → move
+  into the router's per-role table in **step 10**
+- `model_hint` in prompt frontmatter is informational only (no code reads it) → the
+  router consumes it or it is removed in **step 10**
+- SDK HTTP errors (`anthropic.RateLimitError`, `APIStatusError`, …) reach callers
+  unchanged — map them to provider-neutral errors (retryable or not) → **step 10**
+- JSON outputs rely on prompt instructions + retry loops on invalid JSON → structured
+  outputs: provider-neutral method in **step 4.3b**, adopted in **steps 6, 7, 8**
+- No prompt caching: multi-turn conversations resend the system prompt + history at
+  full input price on every turn → **step 10** (measured with the per-call traces)
+- Multi-turn conversations replay only the text of earlier replies, not their thinking
+  blocks (preserved-thinking rules: append-only history, model-bound blocks, billed as
+  input) → decided with the **agent loop** design (v0.1, after step 10), together with
+  its action mechanism (parsed JSON actions, ARCHITECTURE §5 step 5d, vs internal
+  tools — thinking-block replay is mandatory inside a tool-use loop)
 - `work_hours` in `AgentSpec`: single daily window (`"HH:MM-HH:MM"`) applied uniformly
   every day — no day-of-week granularity, no multi-window support; per-agent independent
   schedules ARE supported (each `AgentSpec` has its own field); day-of-week variation
@@ -966,3 +1079,14 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-22 | pnpm pinned via `packageManager` (12.15.0); pnpm's default `minimumReleaseAge` (1 day) kept; no `exclude-newer` cooldown on uv for now | Same pnpm locally and in CI; supply-chain delay on npm without extra config |
 | 2026-10-22 | Python stays 3.13; CI frontend job moves to Node 24 (active LTS) | 3.13 supported until 2029, 3.14+ to be checked against chromadb/onnxruntime wheels when Chroma is used; Node 24 matches local and vitest 5 |
 | 2026-10-22 | TypeScript stays 6.0.3 | TS 7 blocked by typescript-eslint; same language semantics, speed gain negligible at this size |
+| 2026-10-22 | Generator (interview, extraction, org) → `claude-opus-5-5`; team setup → `claude-sonnet-5-5`, as the Anthropic defaults; both roles become selectable among Anthropic / OpenAI / Gemini in step 10 | Frontier quality for the one-shot Generator, lower cost for multi-turn team setup; VISION §3.6 / §4.1 already require the three cloud providers |
+| 2026-10-22 | `complete()` stays provider-neutral; `LLMClient` protocol deferred to step 10 (ADR 0012) | No Anthropic-specific semantics in the caller contract; an interface with a single implementation would be designed blind |
+| 2026-10-22 | `Effort` type (`low` / `medium` / `high`), required on every call, no client default; Opus: interview + extraction `medium`, org generation `high`; Sonnet: conversations + extraction `medium` (no `low`) (ADR 0012) | The API default silently changed (`high` on Opus 4.7 → `medium` on Opus 5.5); a client default would recreate the same trap |
+| 2026-10-22 | `max_tokens`: default 16000, org generation 64000 (ADR 0012) | Thinking now counts toward the cap; the cap is a cost / latency guardrail, not a cost (billed on actual tokens, no OTPM impact) |
+| 2026-10-22 | `LLMResponseError` / `LLMRefusalError` / `LLMTruncatedError` in `adjents/llm/errors.py`; `stop_reason` checked before reading text; no retry and no wrapping in callers (ADR 0012) | A refusal or truncation is not transient; one mapping point in the future API layer; truncated / partial output is never returned |
+| 2026-10-22 | Anthropic server-side fallbacks not enabled; refusals surface as `LLMRefusalError`; fallback policy decided in step 10 (ADR 0012) | Fallback is a model choice (rule 4); beta, refusal-only, Claude API only; deliberate deviation from the SDK guide's "opt in from day one" |
+| 2026-10-22 | Model IDs only in `router/router.py`; team setup client from `LLMRouter.get_team_setup_client()` (ADR 0008 amendment) | Callers and scripts ask the router instead of choosing a model (rule 4); same shape step 10 generalizes |
+| 2026-10-22 | Explicit `thinking: {type: "adaptive", display: "summarized"}` inside `AnthropicClient`; summaries only in a DEBUG logger `adjents.llm.thinking` (ADR 0012) | Behavior independent of per-model defaults; reasoning visible for debugging without changing the `complete()` contract; tracing designed in step 10 |
+| 2026-10-22 | Per-agent reasoning tier set by role, not hierarchy level; designed in step 5 (extended), not step 4 | A specialized N-2 may need more reasoning than its parent; step 4 is a walkthrough, and the field needs its producer (step 7) and consumer (step 10) in view |
+| 2026-10-22 | Structured outputs: neutral method in step 4.3b, adopted in steps 6, 7, 8 | Removes JSON retry loops without reopening callers after their walkthroughs |
+| 2026-10-22 | LLM call contract = ADR 0012 (0011 stays reserved for `Task`) | ADR numbers are stable identifiers; a temporary gap is harmless |
