@@ -91,7 +91,7 @@ libraries for specific sub-problems.
 | --- | --- | --- |
 | Anthropic LLM calls | `anthropic` (official SDK) | Native tool use, streaming, prompt caching |
 | OpenAI LLM calls | `openai` (official SDK) | Standard |
-| Google LLM calls | `google-generativeai` | Standard |
+| Google LLM calls | `google-genai` (official SDK) | Standard |
 | Ollama calls | `httpx` (async HTTP) | Ollama exposes a simple REST API |
 | Vector database | `chromadb` | Local-first, no server required |
 | SQLite ORM | `sqlmodel` | Pydantic + SQLAlchemy, matches our stack |
@@ -1054,9 +1054,10 @@ one WebSocket sync cycle without it being backed by a server record.
 | Tool | Scope | Command |
 | --- | --- | --- |
 | **Ruff** | Python lint + format | `ruff check . && ruff format --check .` |
-| **mypy** (strict) | Python types | `mypy --strict backend/` |
+| **mypy** (strict) | Python types | `mypy --strict adjents/` (from `backend/`) |
 | **ESLint** | TypeScript/React lint | `pnpm lint` |
 | **Prettier** | TypeScript/React format | `pnpm format:check` |
+| **tsc** | TypeScript types | `pnpm typecheck` (`tsc --noEmit`) |
 
 CI runs `lint → typecheck → test` on every PR. A PR cannot be merged if any step fails.
 

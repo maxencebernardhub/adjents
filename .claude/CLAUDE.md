@@ -46,7 +46,7 @@ make typecheck  # mypy --strict + tsc --noEmit
    sensitivity=high → local only. Generator Agent → always cloud. Why: ARCHITECTURE §8.
 5. **Local-first.** Must work 100% offline with Ollama. Cloud is an enhancement.
    Why: ARCHITECTURE §8.
-6. **No AI framework.** Use official LLM SDKs (anthropic, openai, google-generativeai),
+6. **No AI framework.** Use official LLM SDKs (anthropic, openai, google-genai),
    chromadb, and sqlmodel. The agent loop, bus, and router are written from scratch.
    Why: ARCHITECTURE §2, ADR 0001.
 7. **Agent loop = asyncio task per agent.** Pause/resume via is_paused flag in SQLite.

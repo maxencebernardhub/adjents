@@ -1,2 +1,4 @@
-minimumReleaseAgeExclude:
-  - '@types/react@19.2.15'
+# pnpm project settings (single package, not a monorepo).
+# No overrides: pnpm's built-in minimumReleaseAge (1440 min, non-strict) applies,
+# so versions published less than a day ago are skipped when an older version
+# satisfies the range.
