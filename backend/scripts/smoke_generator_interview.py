@@ -62,11 +62,14 @@ _SCRIPTED_TURNS = [
     (
         "For external communications (prospects, clients) I want to validate first. "
         "For everything else agents can go fully autonomous. "
-        "My goal is at least 2000€ net per month; fixed costs are about 1000€/month."
+        "My goal is at least 2000€ net per month; fixed costs are about 1000€/month. "
+        "My target daily rate is 450€."
     ),
     (
         "No one else covers those domains. "
         "Oh — I'd like to call my company Luminescence. "
+        "I've already set up a pro address, alex@luminescence.com, on Google "
+        "Workspace, and opened a Qonto business account. "
         "I think that's everything."
     ),
     (
