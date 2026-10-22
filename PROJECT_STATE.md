@@ -50,6 +50,7 @@ is re-run during the walkthrough step, since the code will change significantly
 | Ollama running + model pulled (`qwen3.5:9b`) | ✅ |
 | `backend/.venv` rebuilt after project move out of Dropbox (2026-10-16) | ✅ |
 | VS Code workspace settings: interpreter pinned, terminal venv activation off (2026-10-16) | ✅ |
+| pnpm 12.15.0 used in `frontend/` via `packageManager` (auto-switch, global pnpm untouched) (2026-10-22) | ✅ |
 | Ollama update + local model review | — (step 10) |
 
 ---
@@ -645,6 +646,73 @@ branch deleted. Next: step 2.
 
 ---
 
+## Last session — 2026-10-22 (step 2)
+
+Step 2 — dependency update (branch `chore/deps-update`). Versions checked on PyPI / npm /
+GitHub, not from memory; every major bump reviewed against its changelog or migration
+guide before upgrading.
+
+### Backend (2026-10-22)
+
+- `pyproject.toml` lower bounds raised to the latest stable releases, `uv lock --upgrade`
+  + `uv sync --all-groups` (72 locked packages updated, 14 transitive added, none removed).
+- Major bumps: `anthropic` 0.103.1 → 2.1.0, `openai` 2.37.0 → 3.36.1 (not imported yet).
+  Notable minors: `sqlalchemy` 2.0 → 2.1, `fastapi` 0.136 → 0.159, `ruff` 0.15 → 0.17,
+  `mypy` 2.1 → 2.4.
+- `anthropic` 1.x: transport moved from `httpx` to `httpx2` (Pydantic-maintained fork;
+  `httpx` described upstream as no longer actively maintained); sampling parameters,
+  Text Completions and legacy aliases removed. 2.x: API version `2026-10-21`, API key
+  sent as `Authorization: Bearer`, one credential per client. **No code change needed**
+  — `AnthropicClient` only uses `AsyncAnthropic(api_key=...)`, `messages.stream()` and
+  `get_final_text()`.
+- ruff, mypy --strict, 244 tests green with no code change; `smoke_team_setup.py` mock
+  mode green.
+- `google-generativeai` → `google-genai` in `.claude/CLAUDE.md` rule 6 and ARCHITECTURE
+  §2; ADR 0001 amended (dated "Amendments" section, original text kept). ARCHITECTURE
+  §12: mypy command aligned with the Makefile, `tsc` row added.
+
+### Frontend and CI (2026-10-22)
+
+- All dependencies bumped with pnpm (zustand held at 5.0.15 by pnpm's default
+  `minimumReleaseAge`). Major bump: vitest 4 → 5 (no frontend tests yet,
+  `--passWithNoTests` kept). TypeScript kept at 6.0.3 (see Technical debt).
+- pnpm pinned to 12.15.0 via `packageManager` in `frontend/package.json`: pnpm switches
+  to it automatically inside the project, the global pnpm (11.1.3) is untouched; CI
+  reads the same field. Stale `minimumReleaseAgeExclude` entry removed.
+- ESLint 10 debt resolved: `tseslint.config()` (deprecated) → `defineConfig()` from
+  `eslint/config`; `parserOptions.project` → `projectService` (now also lints
+  `vite.config.ts` instead of ignoring it); react-hooks flat preset; `ecmaVersion` 2022.
+  Resolved rule set unchanged (164 rules, identical before/after).
+- Vite 8 debt resolved: `vite.config.ts` type-checks against Vite 8.3.5, `pnpm build` OK,
+  no change needed.
+- `dist` added to `frontend/.prettierignore` (`pnpm build` then `make lint` failed).
+- CI: `actions/checkout` v4 → v7, `astral-sh/setup-uv` v4 → v10.3.2 (full version: no
+  floating major tags since v8), `pnpm/action-setup` v4 → v6, `actions/setup-node`
+  v4 → v7, frontend job on Node 24.
+
+### Smoke tests (2026-10-22, real API calls)
+
+- `smoke_generator_org.py` (Opus 4.7) ✅ — 13 agents (10 N-1, 2 N-2), 36 skills.
+- `smoke_team_setup.py --real` (Sonnet 4.6) ✅ — modes 1 and 2.
+- `smoke_generator_interview.py` (Opus 4.7) ❌ — all 11 API calls succeeded, but the
+  interview never reached `ready_to_generate`: the agent keeps asking for the daily
+  rate (`financial_goals`) and the email / banking tools (`existing_tools`), which the
+  scripted Alex Chen scenario never provides. Model behavior against an incomplete
+  scenario, not an SDK regression → fixed in step 3 (3.4b).
+- Confirms that `anthropic` 2.x (API version `2026-10-21`) works with the current
+  `claude-opus-4-7` / `claude-sonnet-4-6` IDs.
+
+### Open points
+
+- pnpm 12 reports "Agent skills awaiting approval: pixi.js" — not approved; install works
+  without it. Decision left to the user.
+- Vite's type declarations reference `Buffer` (needs `@types/node`); hidden by
+  `skipLibCheck: true`, so no package added.
+
+**Stopped at:** step 2 complete — PR open, waiting for CI, then merge.
+
+---
+
 ## Next steps
 
 Each step follows the same cycle unless stated otherwise: create the branch from an
@@ -699,17 +767,19 @@ Branch: `docs/architecture-rationale`
 
 Branch: `chore/deps-update`
 
-- [ ] 2.1 Backend: bump every dependency in `pyproject.toml` to the latest stable
+- [x] 2.1 Backend: bump every dependency in `pyproject.toml` to the latest stable
   version (`anthropic`, `openai`, `google-genai`, `pydantic`, `sqlmodel`, `chromadb`,
   `fastapi`, dev tools…); `uv lock --upgrade` + `uv sync --all-groups`; fix the
   outdated `google-generativeai` name (actual dependency: `google-genai`) in
   `.claude/CLAUDE.md` rule 6, ARCHITECTURE §2 and ADR 0001 (amend, never delete)
-- [ ] 2.2 Check PyPI for a 1.x major release of the `anthropic` Python SDK; if
-  released, follow its migration guide (breaking changes)
-- [ ] 2.3 Frontend: bump dependencies; resolve tech debt ESLint 10 (`eslint.config.js`)
-  and Vite 8 (`vite.config.ts`)
+- [x] 2.2 Check PyPI for a 1.x major release of the `anthropic` Python SDK; if
+  released, follow its migration guide (breaking changes) — 1.x and 2.x both
+  released; upgraded to 2.1.0, no code change needed
+- [x] 2.3 Frontend: bump dependencies; resolve tech debt ESLint 10 (`eslint.config.js`)
+  and Vite 8 (`vite.config.ts`); CI actions bumped, Node 24, pnpm pinned
 - [x] 2.4 ~~Fix pre-existing frontend check failures~~ — done in step 0.5b
-- [ ] 2.5 Full checks green + run the 3 smoke scripts (real API calls — paid)
+- [x] 2.5 Full checks green + run the 3 smoke scripts (real API calls — paid) — org
+  generation and team setup ✅; interview ❌ on its scenario (not the SDK) → 3.4b
 
 ### Step 3 — Migrate to the Claude 5.5 generation
 
@@ -724,6 +794,10 @@ Branch: `chore/claude-5-5-migration`
   `anthropic_client.py` docstring and ARCHITECTURE §2; **amend** ADR 0007 (rationale
   correction — never delete)
 - [ ] 3.4 Update model IDs in `router/router.py` and the 3 smoke scripts
+- [ ] 3.4b Fix `smoke_generator_interview.py`: the scripted Alex Chen scenario never
+  gives the daily rate (`financial_goals`) nor the email / banking tools
+  (`existing_tools`), so the interview never reaches `ready_to_generate` (seen in step
+  2.5); complete the scenario, and review the interview prompt if needed
 - [ ] 3.5 Re-run the smoke tests (paid)
 
 ### Step 4 — Walkthrough: foundations
@@ -828,10 +902,14 @@ Branch: `feat/llm-router` — full `/feature` workflow
 
 ## Technical debt
 
-- `eslint.config.js`: written against ESLint 9 API — may need adjustments for ESLint 10
-  after `pnpm install` → **step 2.3**
-- `vite.config.ts`: written against Vite 6 API — to validate against installed Vite 8
-  → **step 2.3**
+- TypeScript held at 6.0.3: TS 7 (native Go compiler) is blocked by `typescript-eslint`
+  (peer range `typescript <6.1.0`; typed linting on TS 7 tracked in
+  typescript-eslint#10940). Bump in a dedicated PR once supported → **when available**
+- `smoke_generator_interview.py` fails on an incomplete scenario (see Last session
+  2026-10-22, step 2) → **step 3.4b**
+- Ollama client planned on `httpx` (ADR 0001), while `anthropic` / `openai` moved to
+  `httpx2` because `httpx` is described upstream as no longer actively maintained —
+  decide `httpx` vs `httpx2` (ADR candidate) → **step 10**
 - ADR 0007 rationale inaccurate (see Last session 2026-10-16) → **step 3.3**
 - No `Task` entity despite the per-agent task queue in VISION §3.3 / ARCHITECTURE §5
   → **step 5**
@@ -882,3 +960,8 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-16 | `Task` becomes a first-class persisted entity (ADR 0011 in step 5) | Task lifecycle (status, priority, requester, links) does not belong in the hot, frequently broadcast `AgentState` record |
 | 2026-10-16 | `uv run` is the only way to run Python tools; IDE venv auto-activation disabled | A stale activated venv broke the environment after the project move |
 | 2026-10-22 | Agents are data, not code — recorded retroactively (ADR 0010) | Agents are invented by an LLM at runtime: no class can pre-exist them, and executing generated code is a major security risk |
+| 2026-10-22 | `pyproject.toml`: `>=` lower bounds only, no upper bounds | Adjents is an application: `uv.lock` pins exact versions; majors only arrive through a deliberate `uv lock --upgrade` checked by CI |
+| 2026-10-22 | `anthropic` 2.1.0 adopted in step 2 (not 1.17) | No code change needed; avoids a second SDK migration in step 3; validated by smoke tests on Opus 4.7 / Sonnet 4.6 |
+| 2026-10-22 | pnpm pinned via `packageManager` (12.15.0); pnpm's default `minimumReleaseAge` (1 day) kept; no `exclude-newer` cooldown on uv for now | Same pnpm locally and in CI; supply-chain delay on npm without extra config |
+| 2026-10-22 | Python stays 3.13; CI frontend job moves to Node 24 (active LTS) | 3.13 supported until 2029, 3.14+ to be checked against chromadb/onnxruntime wheels when Chroma is used; Node 24 matches local and vitest 5 |
+| 2026-10-22 | TypeScript stays 6.0.3 | TS 7 blocked by typescript-eslint; same language semantics, speed gain negligible at this size |
