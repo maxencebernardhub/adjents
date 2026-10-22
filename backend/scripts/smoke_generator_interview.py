@@ -5,22 +5,25 @@ Key files      : adjents/generator/interview.py
                  adjents/prompts/generator/interview.md
                  adjents/prompts/generator/extract_business_context.md
 
-Runs a scripted conversation with the real Anthropic API (claude-opus-4-7)
-and verifies that a BusinessContext is produced at the end.
-Uses an in-memory SQLite DB — does not touch data/adjents.db.
+Runs a scripted conversation with the real Anthropic API (model chosen by
+LLMRouter.get_generator_client()) and verifies that a BusinessContext is
+produced at the end. Uses an in-memory SQLite DB — does not touch
+data/adjents.db. Makes paid API calls.
 
 Usage (from backend/):
-    uv run python scripts/smoke_generator_interview.py
+    uv run python scripts/smoke_generator_interview.py [--llm-debug]
 
 Requirements:
     ANTHROPIC_API_KEY set in .env (backend/ or project root) or in environment.
 """
 
+import argparse
 import asyncio
 import os
 import sys
 from pathlib import Path
 
+from _common import LLM_DEBUG_HELP, configure_llm_logging
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel, select
@@ -31,6 +34,7 @@ import adjents.db.tables  # noqa: F401, E402
 from adjents.db.convert import business_context_from_table
 from adjents.db.tables import BusinessContextTable
 from adjents.generator.interview import GeneratorInterview, InterviewError
+from adjents.llm.errors import LLMResponseError
 from adjents.prompts.loader import PromptLoader
 from adjents.router.router import LLMConfigError, LLMRouter
 
@@ -111,6 +115,9 @@ def _load_env() -> None:
 
 
 async def run() -> None:
+    parser = argparse.ArgumentParser(description="Generator Agent interview smoke")
+    parser.add_argument("--llm-debug", action="store_true", help=LLM_DEBUG_HELP)
+    configure_llm_logging(parser.parse_args().llm_debug)
     _load_env()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -118,11 +125,17 @@ async def run() -> None:
         print("ERROR: ANTHROPIC_API_KEY is not set. Add it to .env or export it.")
         sys.exit(1)
 
+    try:
+        client = LLMRouter(anthropic_api_key=api_key).get_generator_client()
+    except LLMConfigError as exc:
+        print(f"ERROR: {exc}")
+        sys.exit(1)
+
     total_turns = len(_SCRIPTED_TURNS) + len(_CLOSING_TURNS)
     print()
     _hr("═")
     print("  Smoke test — Generator Agent Interview")
-    print(f"  Model: claude-opus-4-7  |  Max turns: {total_turns}")
+    print(f"  Model: {client.model}  |  Max turns: {total_turns}")
     _hr("═")
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -132,19 +145,13 @@ async def run() -> None:
     prompts_dir = Path(__file__).parent.parent / "adjents" / "prompts"
     loader = PromptLoader(prompts_dir)
 
-    try:
-        client = LLMRouter(anthropic_api_key=api_key).get_generator_client()
-    except LLMConfigError as exc:
-        print(f"ERROR: {exc}")
-        sys.exit(1)
-
     async with AsyncSession(engine) as session:
         interview = GeneratorInterview(client, loader, session)
 
         try:
             opening = await interview.start()
-        except InterviewError as exc:
-            print(f"\nERROR during start(): {exc}")
+        except (InterviewError, LLMResponseError) as exc:
+            print(f"\nERROR during start(): {type(exc).__name__}: {exc}")
             sys.exit(1)
 
         _print_turn("Agent  (opening)", opening)
@@ -154,8 +161,8 @@ async def run() -> None:
             _print_turn(f"User   (turn {i})", user_text)
             try:
                 response = await interview.reply(user_text)
-            except InterviewError as exc:
-                print(f"\nERROR on turn {i}: {exc}")
+            except (InterviewError, LLMResponseError) as exc:
+                print(f"\nERROR on turn {i}: {type(exc).__name__}: {exc}")
                 sys.exit(1)
             _print_turn(f"Agent  (turn {i})", response.message)
             if response.missing_mandatory_info:
@@ -171,8 +178,8 @@ async def run() -> None:
                 _print_turn(f"User   (closing {j})", closing_text)
                 try:
                     response = await interview.reply(closing_text)
-                except InterviewError as exc:
-                    print(f"\nERROR on closing turn {j}: {exc}")
+                except (InterviewError, LLMResponseError) as exc:
+                    print(f"\nERROR on closing turn {j}: {type(exc).__name__}: {exc}")
                     sys.exit(1)
                 _print_turn(f"Agent  (closing {j})", response.message)
                 if response.ready_to_generate:

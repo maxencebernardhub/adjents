@@ -5,16 +5,18 @@ Key files      : adjents/generator/org_generation.py
                  adjents/prompts/generator/org_generation.md
 
 Generates a complete agent org for Sophie Dubois Creations using the real
-Anthropic API (claude-opus-4-7) and verifies the result against minimum
-size thresholds. Uses an in-memory SQLite DB — does not touch data/adjents.db.
+Anthropic API (model chosen by LLMRouter.get_generator_client()) and verifies
+the result against minimum size thresholds. Uses an in-memory SQLite DB — does
+not touch data/adjents.db. Makes paid API calls.
 
 Usage (from backend/):
-    uv run python scripts/smoke_generator_org.py
+    uv run python scripts/smoke_generator_org.py [--llm-debug]
 
 Requirements:
     ANTHROPIC_API_KEY set in .env (backend/ or project root) or in environment.
 """
 
+import argparse
 import asyncio
 import json
 import os
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from _common import LLM_DEBUG_HELP, configure_llm_logging
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel, select
@@ -37,6 +40,7 @@ from adjents.generator.org_generation import (
     VALID_VISUAL_CHARACTERS,
     GeneratorOrgGeneration,
 )
+from adjents.llm.errors import LLMResponseError
 from adjents.prompts.loader import PromptLoader
 from adjents.router.router import LLMConfigError, LLMRouter
 
@@ -219,6 +223,9 @@ def _print_agent_details(
 
 
 async def run() -> None:
+    parser = argparse.ArgumentParser(description="Generator Agent org smoke")
+    parser.add_argument("--llm-debug", action="store_true", help=LLM_DEBUG_HELP)
+    configure_llm_logging(parser.parse_args().llm_debug)
     _load_env()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -226,10 +233,16 @@ async def run() -> None:
         print("ERROR: ANTHROPIC_API_KEY is not set. Add it to .env or export it.")
         sys.exit(1)
 
+    try:
+        client = LLMRouter(anthropic_api_key=api_key).get_generator_client()
+    except LLMConfigError as exc:
+        print(f"ERROR: {exc}")
+        sys.exit(1)
+
     print()
     _hr("═")
     print("  Smoke test — Generator Agent Org Generation")
-    print("  Model: claude-opus-4-7  |  Persona: Sophie Dubois Creations")
+    print(f"  Model: {client.model}  |  Persona: Sophie Dubois Creations")
     _hr("═")
     print()
 
@@ -240,14 +253,8 @@ async def run() -> None:
     prompts_dir = Path(__file__).parent.parent / "adjents" / "prompts"
     loader = PromptLoader(prompts_dir)
 
-    try:
-        client = LLMRouter(anthropic_api_key=api_key).get_generator_client()
-    except LLMConfigError as exc:
-        print(f"ERROR: {exc}")
-        sys.exit(1)
-
     context = _make_sophie_context()
-    print("  Calling LLM… (this may take 20–60 s)")
+    print("  Calling LLM… (high effort: this may take a few minutes)")
     print()
 
     agent_count = 0
@@ -260,7 +267,11 @@ async def run() -> None:
 
     async with AsyncSession(engine) as session:
         gen = GeneratorOrgGeneration(client, loader, session)
-        result = await gen.generate(context, on_agent_ready=_on_agent_ready)
+        try:
+            result = await gen.generate(context, on_agent_ready=_on_agent_ready)
+        except LLMResponseError as exc:
+            print(f"\nERROR during generate(): {type(exc).__name__}: {exc}")
+            sys.exit(1)
 
         # ── Fetch DB rows for verification ────────────────────────────────
         spec_rows = (await session.exec(select(AgentSpecTable))).all()
