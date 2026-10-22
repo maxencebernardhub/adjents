@@ -2,3 +2,6 @@
 # on install, so Prettier must not enforce its own style on them.
 pnpm-lock.yaml
 pnpm-workspace.yaml
+
+# Build output (`pnpm build`): generated, minified code.
+dist
