@@ -654,8 +654,9 @@ guide before upgrading.
 
 ### Backend (2026-10-22)
 
-- `pyproject.toml` lower bounds raised to the latest stable releases, `uv lock --upgrade`
-  + `uv sync --all-groups` (72 locked packages updated, 14 transitive added, none removed).
+- `pyproject.toml` lower bounds raised to the latest stable releases, then
+  `uv lock --upgrade` and `uv sync --all-groups` (72 locked packages updated, 14
+  transitive added, none removed).
 - Major bumps: `anthropic` 0.103.1 → 2.1.0, `openai` 2.37.0 → 3.36.1 (not imported yet).
   Notable minors: `sqlalchemy` 2.0 → 2.1, `fastapi` 0.136 → 0.159, `ruff` 0.15 → 0.17,
   `mypy` 2.1 → 2.4.
