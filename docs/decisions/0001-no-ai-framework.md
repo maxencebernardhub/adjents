@@ -21,7 +21,7 @@ Frameworks evaluated: LangChain, LangGraph, LlamaIndex, CrewAI, AutoGen.
 We will **not use any AI agent framework**. The agent loop, message bus, LLM router,
 and scheduler are written from scratch. We use only:
 
-- Official LLM provider SDKs (`anthropic`, `openai`, `google-generativeai`)
+- Official LLM provider SDKs (`anthropic`, `openai`, `google-generativeai`) (see Amendment 2026-10-22)
 - `httpx` for Ollama (simple REST API, no SDK needed)
 - `chromadb` for vector storage
 - `sqlmodel` for SQLite ORM
@@ -57,3 +57,14 @@ and scheduler are written from scratch. We use only:
 
 The tradeoff is acceptable. The components involved are small and well-understood.
 The risk of framework lock-in outweighs the short-term productivity gain.
+
+---
+
+## Amendments
+
+### 2026-10-22 — Google SDK package name
+
+The Decision section names `google-generativeai`, which Google has since marked
+as deprecated/legacy. The dependency actually declared in `backend/pyproject.toml`
+is its successor, `google-genai` (official Google Gen AI SDK). The decision itself
+(official provider SDKs only, no AI framework) is unchanged.
