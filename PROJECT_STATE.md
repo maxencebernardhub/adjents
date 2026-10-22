@@ -825,7 +825,8 @@ Branch: `chore/claude-5-5-migration`
   These are the Anthropic defaults — selection among Anthropic / OpenAI / Gemini comes
   in step 10, so `complete()` stays provider-neutral
 - [x] 3.1b ADR 0012 — provider-neutral LLM call contract (written before 3.2)
-- [ ] 3.2 `AnthropicClient` (TDD): `Effort` type (`low` / `medium` / `high`, in
+- [x] 3.2 `AnthropicClient` (TDD — 35 new tests, 279 total; caller effort constants
+  done here, since a required `effort` needs them to type-check): `Effort` type (`low` / `medium` / `high`, in
   `adjents/llm/types.py`), `effort` required on every call (no client default); explicit
   `thinking: {type: "adaptive", display: "summarized"}` + DEBUG logger
   `adjents.llm.thinking`; `max_tokens` default 16000 (org generation 64000); read
@@ -834,10 +835,11 @@ Branch: `chore/claude-5-5-migration`
   wrapping in callers; DEBUG log of `stop_reason` + `usage.output_tokens`, WARNING on
   refusal / truncation (no content); read-only `model` property; confirmed: no prefill,
   `temperature` or `tool_choice` sent; server-side fallbacks deferred to step 10
-- [ ] 3.3 Re-verify the non-streaming threshold in the upgraded SDK (done in the design
-  session); fix the `anthropic_client.py` docstring and ARCHITECTURE §2; **amend** ADR
-  0007 (rationale correction + Option B "no workaround" correction — never delete);
-  **amend** ADR 0008 (model + routing via `LLMRouter`)
+- [x] 3.3 Re-verify the non-streaming threshold in the upgraded SDK (done in the design
+  session); fix the `anthropic_client.py` docstring (rewritten in 3.2) and
+  ARCHITECTURE §2; **amend** ADR 0007 (rationale correction + Option B "no
+  workaround" correction — never delete); **amend** ADR 0008 (model + routing via
+  `LLMRouter`)
 - [ ] 3.4 Model IDs: private constants in `router/router.py` + new
   `LLMRouter.get_team_setup_client()` (no hard-coded model ID outside the router);
   effort constants in each caller; smoke scripts get their clients from the router and
@@ -1005,8 +1007,6 @@ Branch: `feat/llm-router` — full `/feature` workflow
 - Ollama client planned on `httpx` (ADR 0001), while `anthropic` / `openai` moved to
   `httpx2` because `httpx` is described upstream as no longer actively maintained —
   decide `httpx` vs `httpx2` (ADR candidate) → **step 10**
-- ADR 0007 rationale inaccurate (see Last session 2026-10-16 and 2026-10-22, step 3)
-  → **step 3.3**
 - No `Task` entity despite the per-agent task queue in VISION §3.3 / ARCHITECTURE §5
   → **step 5**
 - ARCHITECTURE: "SQLite is the source of truth" is only stated in §11 (Frontend →
@@ -1062,7 +1062,7 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-05-22 | Org restructuring deferred to v0.2 — Generator Agent orchestrates, consults N-1/N-2 (ADR 0005) | Memory preservation; agent domain knowledge improves proposals |
 | 2026-05-22 | Micro-adjustments via parent agent (v0.2) — N+1 owns team config for small changes (ADR 0005) | Distinct from restructuring; avoids Generator Agent overkill |
 | 2026-05-22 | Org generation: single LLM call (global coherence); `AgentState` created in `generate()`; `visual_character` from predefined list | Coherence over speed; no orphan invariant; PixiJS sprite safety |
-| 2026-05-25 | `AnthropicClient` streams unconditionally via `messages.stream()` (ADR 0007) | SDK raises `ValueError` for `messages.create()` with `max_tokens > 8192` on Opus 4+ |
+| 2026-05-25 | `AnthropicClient` streams unconditionally via `messages.stream()` (ADR 0007) | SDK raises `ValueError` for `messages.create()` with `max_tokens > 8192` on Opus 4+ (rationale corrected 2026-10-22: the SDK's expected-duration check, > ~21,333 `max_tokens` on every model — ADR 0007 amendment) |
 | 2026-05-25 | N-1 leaf nodes valid; N-2 count driven by context, not enforced; skills no upper cap | Initial org is a first draft — N-1 setup conversations refine scope and spawn specialists (ADR 0006) |
 | 2026-05-25 | `generate()` accepts optional `on_agent_ready` callback for progress reporting | Pattern for future WebSocket streaming of org generation progress to the frontend |
 | 2026-05-27 | Natural conversation + single extraction call at validation time (ADR 0008) | Avoids per-turn JSON fragility; one clean extraction when the user is satisfied |

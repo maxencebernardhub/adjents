@@ -66,7 +66,8 @@ justifies the dependency.
 - **Extraction model**: `claude-sonnet-4-6` (matching the prompt frontmatter
   `model_hint`). NOT routed via `LLMRouter.get_generator_client()` (which returns
   `claude-opus-4-7`). The caller constructs `AnthropicClient` directly. LLMRouter
-  integration will be revisited in v0.2.
+  integration will be revisited in v0.2. (Model and routing changed — see
+  Amendment 2026-10-22.)
 - **Retry logic**: the extraction call retries up to `_MAX_RETRIES = 3` times on
   invalid JSON, with corrective feedback appended to the conversation. After all
   retries, `TeamSetupError` is raised (from `adjents/errors.py`).
@@ -103,3 +104,22 @@ The Alternatives Considered table entry "Shared `_apply_agent_updates` utility
 module" therefore applies narrowly to `_apply_agent_updates` only. The broader
 pattern (share genuinely neutral helpers in `utils/`; duplicate direction-specific
 logic) supersedes the blanket "no shared utilities" stance.
+
+---
+
+## Amendment — 2026-10-22 (Claude 5.5 migration: model and routing)
+
+Two consequences listed above change in step 3; the decision itself
+(natural conversation, then a single extraction call at validation time)
+is unchanged.
+
+- **Model**: team setup conversations and extraction now use
+  `claude-sonnet-5-5`, both at effort `medium` (see ADR 0012).
+- **Routing**: the client is no longer built by the caller. It comes from
+  `LLMRouter.get_team_setup_client()`, so no caller hard-codes a model ID
+  (architecture rule 4). This brings forward, in a minimal form, the
+  `LLMRouter` integration announced for v0.2. The per-role method is
+  interim: step 10 replaces it with request-based routing.
+
+The `model_hint` field in prompt frontmatter is informational only: no code
+reads it. Whether the router consumes or drops it is decided in step 10.

@@ -98,13 +98,22 @@ libraries for specific sub-problems.
 | Async SQLite driver | `aiosqlite` | Non-blocking SQLite access in asyncio coroutines (see ADR 0003) |
 
 **`AnthropicClient` — streaming unconditionally**: `AnthropicClient.complete()`
-always uses `messages.stream()` + `get_final_text()`, regardless of `max_tokens`.
-The Anthropic SDK enforces a non-streaming token ceiling for Opus 4+ models (8192
-tokens via `MODEL_NONSTREAMING_TOKENS`); any `messages.create()` call exceeding
-that limit raises a `ValueError` before the request is sent. `GeneratorOrgGeneration`
-requires `_MAX_TOKENS = 32000` for complex org JSONs (10+ domains). Streaming
-unconditionally removes this ceiling, keeps the `complete()` signature unchanged,
-and future-proofs the client against SDK threshold changes. See ADR 0007.
+always uses `messages.stream()` + `get_final_message()`, regardless of `max_tokens`.
+The Anthropic SDK refuses a non-streaming `messages.create()` whose expected
+duration (`3600 × max_tokens / 128000` seconds) exceeds 10 minutes — i.e. above
+~21,333 `max_tokens`, for every model (its `MODEL_NONSTREAMING_TOKENS` table only
+adds a lower 8192 cap for Opus 4.0 / 4.1). With Claude 5.5 models thinking is always
+on and shares the output budget, so `GeneratorOrgGeneration` uses
+`_MAX_TOKENS = 64000`. Streaming unconditionally removes this ceiling with a single
+code path. See ADR 0007 (amended 2026-10-22).
+
+**LLM call contract**: callers only see a provider-neutral contract — a required
+`effort` (`low` / `medium` / `high`), a `max_tokens` guardrail, a `str` result, and
+typed errors for unusable responses (`LLMRefusalError`, `LLMTruncatedError`,
+`LLMResponseError` in `llm/errors.py`). `AnthropicClient` checks `stop_reason`
+before reading any text and sends explicit adaptive thinking with summarized
+display. The OpenAI and Gemini clients of step 10 implement the same contract.
+See ADR 0012.
 
 The agent loop, message bus, router, and scheduler are written from scratch, as
 small single-responsibility modules (300 lines = review trigger, 500 = hard limit —
