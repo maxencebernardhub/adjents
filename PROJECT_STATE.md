@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-10-22 | Branch: docs/architecture-rationale | Milestone: v0.1 — MVP
+> Updated: 2026-10-22 | Branch: chore/deps-update | Milestone: v0.1 — MVP
 
 ---
 
@@ -640,7 +640,8 @@ Documentation only, no code change.
   step 9 (see Technical debt).
 - Outdated `google-generativeai` name → fixed in step 2.1.
 
-**Stopped at:** step 1 complete — PR open, waiting for CI, then merge.
+**Stopped at:** step 1 complete — PR #2 merged on 2026-10-22 (merge commit `84dbdbd`),
+branch deleted. Next: step 2.
 
 ---
 
