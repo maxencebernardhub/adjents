@@ -21,11 +21,15 @@ from adjents.db.convert import (
 from adjents.db.tables import ConversationTable, MessageTable
 from adjents.generator.models import BusinessContext
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.types import Effort
 from adjents.messaging.models import Conversation, Message
 from adjents.prompts.loader import PromptLoader
 
 _GENERATOR_ID = "generator"
 _MAX_RETRIES = 3
+# Interim: moves into the router's per-role table in step 10 (ADR 0012).
+_TURN_EFFORT: Effort = "medium"
+_EXTRACTION_EFFORT: Effort = "medium"
 
 
 @dataclass
@@ -114,7 +118,9 @@ class GeneratorInterview:
         current = list(messages)
         last_raw = ""
         for attempt in range(_MAX_RETRIES):
-            last_raw = await self._client.complete(current, system=system)
+            last_raw = await self._client.complete(
+                current, effort=_TURN_EFFORT, system=system
+            )
             try:
                 json.loads(last_raw)
                 return last_raw
@@ -197,7 +203,9 @@ class GeneratorInterview:
         system = self._loader.get("generator/extract_business_context").content
         transcript = self._build_transcript()
         raw = await self._client.complete(
-            [{"role": "user", "content": transcript}], system=system
+            [{"role": "user", "content": transcript}],
+            effort=_EXTRACTION_EFFORT,
+            system=system,
         )
         try:
             data = json.loads(raw)

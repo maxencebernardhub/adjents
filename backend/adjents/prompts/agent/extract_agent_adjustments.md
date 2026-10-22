@@ -1,7 +1,7 @@
 ---
 version: 1
 description: "Extract agent configuration changes from conversation transcripts"
-model_hint: "claude-sonnet-4-6"
+model_hint: "claude-sonnet-5-5"
 ---
 
 # Extract Agent Adjustments

@@ -8,10 +8,11 @@ Key files:        adjents/generator/team_setup.py
 
 Mock mode (default): AsyncMock LLM, fully automated, assertions on DB state.
 Real mode (--real):  requires ANTHROPIC_API_KEY; prints conversation to stdout.
+                     Model chosen by LLMRouter.get_team_setup_client(); paid calls.
 
 Usage (from backend/):
     uv run python scripts/smoke_team_setup.py
-    uv run python scripts/smoke_team_setup.py --real
+    uv run python scripts/smoke_team_setup.py --real [--llm-debug]
 """
 
 import argparse
@@ -25,6 +26,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+from _common import LLM_DEBUG_HELP, configure_llm_logging
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -45,7 +47,9 @@ from adjents.db.tables import (
 )
 from adjents.generator.team_setup import TeamSetupOrchestrator
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.errors import LLMResponseError
 from adjents.prompts.loader import PromptLoader
+from adjents.router.router import LLMRouter
 
 _WIDTH = 72
 
@@ -506,7 +510,8 @@ async def _run_real(session: AsyncSession, ids: dict[str, str]) -> None:
     backend_dir = Path(__file__).parent.parent
     prompts_dir = backend_dir / "adjents" / "prompts"
     loader = PromptLoader(prompts_dir)
-    client = AnthropicClient(api_key=api_key, model="claude-sonnet-4-6")
+    client = LLMRouter(anthropic_api_key=api_key).get_team_setup_client()
+    print(f"  Model: {client.model}")
 
     coo_id = ids["coo_id"]
     n1a_id = ids["n1a_id"]
@@ -585,7 +590,9 @@ async def _run_real(session: AsyncSession, ids: dict[str, str]) -> None:
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Smoke test — team setup.")
     parser.add_argument("--real", action="store_true", help="Use real Anthropic API")
+    parser.add_argument("--llm-debug", action="store_true", help=LLM_DEBUG_HELP)
     args = parser.parse_args()
+    configure_llm_logging(args.llm_debug)
 
     if args.real:
         _load_env()
@@ -606,7 +613,11 @@ async def main() -> None:
         )
 
         if args.real:
-            await _run_real(session, ids)
+            try:
+                await _run_real(session, ids)
+            except LLMResponseError as exc:
+                print(f"\nERROR: {type(exc).__name__}: {exc}")
+                sys.exit(1)
         else:
             _, n2_id = await _run_mode1_mock(session, ids)
             await _run_mode2_mock(session, n2_id)

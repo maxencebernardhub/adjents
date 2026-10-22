@@ -1,7 +1,7 @@
 ---
 version: 1
 description: "Agent self-introduction and configuration discussion"
-model_hint: "claude-sonnet-4-6"
+model_hint: "claude-sonnet-5-5"
 ---
 
 # Agent — Introduction and Conversation

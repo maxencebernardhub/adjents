@@ -1,7 +1,7 @@
 ---
 version: 1
 description: "Extract BusinessContext JSON from a completed interview transcript"
-model_hint: "claude-opus-4-7"
+model_hint: "claude-opus-5-5"
 ---
 
 # Extract BusinessContext from Interview Transcript

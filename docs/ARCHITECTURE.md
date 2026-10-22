@@ -98,13 +98,22 @@ libraries for specific sub-problems.
 | Async SQLite driver | `aiosqlite` | Non-blocking SQLite access in asyncio coroutines (see ADR 0003) |
 
 **`AnthropicClient` — streaming unconditionally**: `AnthropicClient.complete()`
-always uses `messages.stream()` + `get_final_text()`, regardless of `max_tokens`.
-The Anthropic SDK enforces a non-streaming token ceiling for Opus 4+ models (8192
-tokens via `MODEL_NONSTREAMING_TOKENS`); any `messages.create()` call exceeding
-that limit raises a `ValueError` before the request is sent. `GeneratorOrgGeneration`
-requires `_MAX_TOKENS = 32000` for complex org JSONs (10+ domains). Streaming
-unconditionally removes this ceiling, keeps the `complete()` signature unchanged,
-and future-proofs the client against SDK threshold changes. See ADR 0007.
+always uses `messages.stream()` + `get_final_message()`, regardless of `max_tokens`.
+The Anthropic SDK refuses a non-streaming `messages.create()` whose expected
+duration (`3600 × max_tokens / 128000` seconds) exceeds 10 minutes — i.e. above
+~21,333 `max_tokens`, for every model (its `MODEL_NONSTREAMING_TOKENS` table only
+adds a lower 8192 cap for Opus 4.0 / 4.1). With Claude 5.5 models thinking is always
+on and shares the output budget, so `GeneratorOrgGeneration` uses
+`_MAX_TOKENS = 64000`. Streaming unconditionally removes this ceiling with a single
+code path. See ADR 0007 (amended 2026-10-22).
+
+**LLM call contract**: callers only see a provider-neutral contract — a required
+`effort` (`low` / `medium` / `high`), a `max_tokens` guardrail, a `str` result, and
+typed errors for unusable responses (`LLMRefusalError`, `LLMTruncatedError`,
+`LLMResponseError` in `llm/errors.py`). `AnthropicClient` checks `stop_reason`
+before reading any text and sends explicit adaptive thinking with summarized
+display. The OpenAI and Gemini clients of step 10 implement the same contract.
+See ADR 0012.
 
 The agent loop, message bus, router, and scheduler are written from scratch, as
 small single-responsibility modules (300 lines = review trigger, 500 = hard limit —
@@ -763,6 +772,15 @@ cloud) must be enforced consistently. If agents chose their own models, a single
 misconfiguration could send sensitive data to a cloud provider. Centralization also
 makes cost tracking and routing rule changes easy — one place to update.
 
+> **Status: minimal implementation.** `router/router.py` only serves the two system
+> roles that exist today, through one method per role: `get_generator_client()`
+> (`claude-opus-5-5`) and `get_team_setup_client()` (`claude-sonnet-5-5`). Callers
+> never name a model. The request-based design below is a sketch, revisited in step
+> 10. Inputs under discussion: per-agent reasoning tier and task complexity (step 5),
+> per-role provider selection among Anthropic / OpenAI / Gemini, fallback policy,
+> per-call tracing, and sampling parameters (e.g. temperature) for non-Anthropic
+> providers.
+
 ```python
 class RouterRequest(BaseModel):
     agent_id: str
@@ -772,19 +790,23 @@ class RouterRequest(BaseModel):
 
 class RouterDecision(BaseModel):
     provider: str      # "ollama", "anthropic", "openai", "google"
-    model: str         # e.g. "qwen2.5:7b", "claude-opus-4-7", "gpt-4o"
-    temperature: float
+    model: str         # e.g. "qwen3.5:9b", "claude-opus-5-5"
+    effort: Effort     # provider-neutral; each client maps it (ADR 0012)
     max_tokens: int
     reason: str        # logged for traceability
 ```
+
+`temperature` is deliberately absent: on the Anthropic API version used by the SDK
+(`2026-10-21`), sending it returns a 400 on every model. Effort is the main control.
 
 ### v0.1 routing rules (deterministic)
 
 | Condition | Provider | Rationale |
 | --- | --- | --- |
-| Generator Agent | Cloud — claude-opus-4-7 | One-shot, highest quality required |
+| Generator Agent | Cloud — `claude-opus-5-5` | One-shot, highest quality required |
+| Team setup / reconfiguration | Cloud — `claude-sonnet-5-5` | Multi-turn conversations: lower cost and latency |
 | sensitivity = high | Local Ollama | Privacy: sensitive data never leaves the machine |
-| complexity = high | Cloud — claude-sonnet-4-6 | Local models insufficient for complex reasoning |
+| complexity = high | Cloud — `claude-sonnet-5-5` | Local models insufficient for complex reasoning |
 | All other tasks | Local Ollama | Fast, private, offline-capable, free |
 
 The user can set a preferred cloud provider (Anthropic / OpenAI / Google) in settings.
@@ -866,9 +888,13 @@ prompts/agent/memory_summary.md
 ---
 version: 1
 description: "Generator Agent onboarding interview"
-model_hint: "claude-opus-4-7"
+model_hint: "claude-opus-5-5"
 ---
 ```
+
+`model_hint` is **informational only**: no code reads it, and the model is always
+chosen by `LLMRouter` (rule 4). Whether the router consumes the hint or it is
+removed is decided in step 10.
 
 ### How prompts are loaded
 

@@ -22,6 +22,7 @@ from adjents.db.tables import (
 )
 from adjents.errors import TeamSetupError
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.types import Effort
 from adjents.prompts.loader import PromptLoader
 from adjents.utils.agent_context import _build_agent_context_message
 
@@ -115,6 +116,9 @@ def _advance_traversal(
 
 class TeamSetupOrchestrator:
     _MAX_RETRIES: int = 3
+    # Interim: moves into the router's per-role table in step 10 (ADR 0012).
+    _CONVERSATION_EFFORT: Effort = "medium"
+    _EXTRACTION_EFFORT: Effort = "medium"
 
     def __init__(
         self,
@@ -213,7 +217,9 @@ class TeamSetupOrchestrator:
             nudge = "Please continue our conversation."
             msgs.append({"role": "user", "content": nudge})
             intro_prompt = self._prompts.get("agent/intro")
-            response = await self._client.complete(msgs, system=intro_prompt.content)
+            response = await self._client.complete(
+                msgs, effort=self._CONVERSATION_EFFORT, system=intro_prompt.content
+            )
             msgs.append({"role": "assistant", "content": response})
             self._conv_messages[conv_id] = msgs
             await self._append_message(conv_id, agent_id, "user", nudge)
@@ -251,7 +257,9 @@ class TeamSetupOrchestrator:
         intro_prompt = self._prompts.get("agent/intro")
 
         messages: list[dict[str, str]] = [{"role": "user", "content": context_msg}]
-        response = await self._client.complete(messages, system=intro_prompt.content)
+        response = await self._client.complete(
+            messages, effort=self._CONVERSATION_EFFORT, system=intro_prompt.content
+        )
         messages.append({"role": "assistant", "content": response})
 
         await self._append_message(conv_id, root_agent_id, "user", context_msg)
@@ -280,7 +288,9 @@ class TeamSetupOrchestrator:
         msgs = list(self._conv_messages.get(conv_id, []))
         msgs.append({"role": "user", "content": user_message})
         intro_prompt = self._prompts.get("agent/intro")
-        response = await self._client.complete(msgs, system=intro_prompt.content)
+        response = await self._client.complete(
+            msgs, effort=self._CONVERSATION_EFFORT, system=intro_prompt.content
+        )
         msgs.append({"role": "assistant", "content": response})
         self._conv_messages[conv_id] = msgs
 
@@ -328,7 +338,7 @@ class TeamSetupOrchestrator:
             intro_prompt = self._prompts.get("agent/intro")
             messages: list[dict[str, str]] = [{"role": "user", "content": context_msg}]
             intro_response = await self._client.complete(
-                messages, system=intro_prompt.content
+                messages, effort=self._CONVERSATION_EFFORT, system=intro_prompt.content
             )
             messages.append({"role": "assistant", "content": intro_response})
 
@@ -364,7 +374,7 @@ class TeamSetupOrchestrator:
             root_msgs.append({"role": "user", "content": summary_req})
             intro_prompt = self._prompts.get("agent/intro")
             summary = await self._client.complete(
-                root_msgs, system=intro_prompt.content
+                root_msgs, effort=self._CONVERSATION_EFFORT, system=intro_prompt.content
             )
             root_msgs.append({"role": "assistant", "content": summary})
             self._conv_messages[root_conv_id] = root_msgs
@@ -695,7 +705,9 @@ class TeamSetupOrchestrator:
                         ),
                     }
                 )
-            raw = await self._client.complete(messages, system=extract_prompt.content)
+            raw = await self._client.complete(
+                messages, effort=self._EXTRACTION_EFFORT, system=extract_prompt.content
+            )
             try:
                 return json.loads(raw)  # type: ignore[no-any-return]
             except json.JSONDecodeError as exc:

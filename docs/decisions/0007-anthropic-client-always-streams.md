@@ -11,7 +11,8 @@ The Anthropic Python SDK defines a per-model non-streaming token threshold
 (`MODEL_NONSTREAMING_TOKENS`). For Opus 4.x models (e.g.
 `claude-opus-4-20250514`), this threshold is **8192**: any call to
 `messages.create()` with `max_tokens > 8192` raises a `ValueError` at
-request time before any network call is made.
+request time before any network call is made. (Rationale corrected — see
+Amendment 2026-10-22.)
 
 `GeneratorOrgGeneration` requires `_MAX_TOKENS = 32000` because org JSONs
 for businesses with 10+ domains and rich skill sets routinely exceed 8192
@@ -77,3 +78,28 @@ future-proofs the client against SDK threshold changes.
   call without truncation.
 - **Other LLM clients** (Ollama, OpenAI, Google): unaffected — each has
   its own client class. This decision applies to `AnthropicClient` only.
+
+---
+
+## Amendments
+
+### 2026-10-22 — Rationale correction (Claude 5.5 migration)
+
+The Context section attributes the constraint to `MODEL_NONSTREAMING_TOKENS`
+(8192 for "Opus 4.x"). This is inaccurate. In the installed SDK (checked in
+`anthropic` 0.103.1 on 2026-10-16 and 2.1.0 on 2026-10-22), that table only
+lists Opus 4.0 and 4.1. The check that applies to every model is the SDK's
+expected-duration check (`_calculate_nonstreaming_timeout`):
+`3600 × max_tokens / 128000` seconds > 600 ⇒ `ValueError`, i.e. a
+non-streaming `messages.create()` fails above ~21,333 `max_tokens`. The check
+only runs when no explicit timeout is set, so Option B's "no workaround
+exists" is also inaccurate: an explicit timeout bypasses it, but the SDK
+itself requires streaming for operations that may exceed 10 minutes.
+
+The decision is unchanged and reinforced: with Claude 5.5 models thinking is
+always on and counts toward `max_tokens`, and org generation now uses
+`max_tokens = 64000`, well above the threshold.
+
+Consequences updated: `complete()` reads `get_final_message()` and checks
+`stop_reason` before extracting text (`get_final_text()` ignores it); an empty
+response raises `LLMResponseError` instead of `ValueError` (see ADR 0012).

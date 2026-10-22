@@ -12,6 +12,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from adjents.db.tables import BusinessContextTable, ConversationTable, MessageTable
 from adjents.generator.interview import GeneratorInterview, InterviewError
 from adjents.llm.anthropic_client import AnthropicClient
+from adjents.llm.errors import LLMRefusalError
 from adjents.prompts.loader import PromptLoader
 
 # --- Test constants ---
@@ -284,3 +285,46 @@ async def test_reply_after_completed_does_not_create_duplicate_business_context(
     await iv.reply("Still ready.")
     rows = (await async_session.exec(select(BusinessContextTable))).all()
     assert len(rows) == 1
+
+
+# --- LLM call contract (ADR 0012) ---
+
+
+async def test_interview_turns_use_medium_effort(
+    interview: GeneratorInterview,
+    mock_client: MagicMock,
+) -> None:
+    await interview.start()
+    await interview.reply("Hi, I am Alex.")
+    efforts = [call.kwargs["effort"] for call in mock_client.complete.call_args_list]
+    assert efforts == ["medium", "medium"]
+
+
+async def test_business_context_extraction_uses_medium_effort(
+    mock_client: MagicMock,
+    loader: PromptLoader,
+    async_session: AsyncSession,
+) -> None:
+    mock_client.complete = AsyncMock(
+        side_effect=[_AGENT_RESPONSE, _DONE_RESPONSE, _EXTRACT_RESPONSE]
+    )
+    iv = GeneratorInterview(mock_client, loader, async_session)
+    await iv.start()
+    await iv.reply("I am ready to build my team.")
+    extraction_call = mock_client.complete.call_args_list[-1]
+    assert extraction_call.kwargs["effort"] == "medium"
+
+
+async def test_refusal_propagates_without_retry(
+    mock_client: MagicMock,
+    loader: PromptLoader,
+    async_session: AsyncSession,
+) -> None:
+    """Retrying a refused request would likely be refused again — and paid."""
+    mock_client.complete = AsyncMock(
+        side_effect=LLMRefusalError(model="m", category="cyber", explanation=None)
+    )
+    iv = GeneratorInterview(mock_client, loader, async_session)
+    with pytest.raises(LLMRefusalError):
+        await iv.start()
+    assert mock_client.complete.call_count == 1

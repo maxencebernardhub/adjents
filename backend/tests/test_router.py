@@ -23,6 +23,16 @@ def test_router_raises_without_any_key(monkeypatch: pytest.MonkeyPatch) -> None:
         LLMRouter()
 
 
+def test_router_error_message_is_not_generator_specific(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The router now serves the team setup too, not only the Generator Agent."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(LLMConfigError) as exc_info:
+        LLMRouter()
+    assert "Generator" not in str(exc_info.value)
+
+
 def test_router_direct_key_takes_priority_over_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -38,7 +48,17 @@ def test_get_generator_client_returns_anthropic_client() -> None:
     assert isinstance(client, AnthropicClient)
 
 
-def test_get_generator_client_uses_opus_model() -> None:
+def test_get_generator_client_uses_opus_5_5() -> None:
     router = LLMRouter(anthropic_api_key="sk-test-key")
-    client = router.get_generator_client()
-    assert client._model == "claude-opus-4-7"
+    assert router.get_generator_client().model == "claude-opus-5-5"
+
+
+def test_get_team_setup_client_returns_anthropic_client() -> None:
+    router = LLMRouter(anthropic_api_key="sk-test-key")
+    assert isinstance(router.get_team_setup_client(), AnthropicClient)
+
+
+def test_get_team_setup_client_uses_sonnet_5_5() -> None:
+    """Team setup is routed too: no caller hard-codes a model (ADR 0008)."""
+    router = LLMRouter(anthropic_api_key="sk-test-key")
+    assert router.get_team_setup_client().model == "claude-sonnet-5-5"
