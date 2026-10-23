@@ -786,6 +786,26 @@ branch deleted, CI green on main. Next: step 4.
 
 ---
 
+## Last session — 2026-10-23 (step 4, part 1 — in progress)
+
+Step 4 — walkthrough of the foundations (branch `refactor/walkthrough-foundations`).
+Part 1 = setup + commented reading 4.1 → 4.3 (no code change); part 2 = 4.4 → 4.7.
+Full notes (explanations, Q&A, findings, decisions) in
+`docs/walkthroughs/step-4-foundations.md`.
+
+### Done (2026-10-23)
+
+- 4.0: branch created from `main` (`307795e`); step 3 "Stopped at" corrected; base
+  green (282 tests).
+- 4.1: domain models walked through (6 modules + tests). 12 findings (F1–F12), no
+  runtime bug; decisions Q1–Q3 (see Decisions log, 2026-10-23).
+- `docs/walkthroughs/` created; `docs/reviews/` and `docs/walkthroughs/` added to the
+  repository trees of `README.md` and ARCHITECTURE §1.
+
+**Stopped at:** 4.1 complete — next: 4.2 (database layer).
+
+---
+
 ## Next steps
 
 Each step follows the same cycle unless stated otherwise: create the branch from an
@@ -898,18 +918,36 @@ Branch: `chore/claude-5-5-migration`
 
 Branch: `refactor/walkthrough-foundations`
 
-- [ ] 4.1 Walkthrough: models (`agents/`, `messaging/`, `memory/`, `projects/`,
-  `deliverables/`, `generator/models.py`) + their tests
+Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
+
+- [x] 4.1 Walkthrough: models (`agents/`, `messaging/`, `memory/`, `projects/`,
+  `deliverables/`, `generator/models.py`) + their tests — findings F1–F12
 - [ ] 4.2 Walkthrough: `db/` (`tables.py`, `convert.py`, `engine.py`) + tests
 - [ ] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
   `llm/types.py`, `llm/errors.py`, `router/router.py` + tests (incl.
   `test_llm_errors.py`)
 - [ ] 4.4 Docstrings + comments (`anthropic_client.py`, `types.py`, `errors.py` and
-  `router.py` already have full docstrings from step 3: review only)
+  `router.py` already have full docstrings from step 3: review only). From the
+  walkthrough: class docstrings for the 6 model modules and module docstrings per the
+  convention — purpose, place in the flow, entry points, related ADRs (F8);
+  `test_models_agents.py` module docstring lists `BlockingQuestion` (F11)
 - [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004, and for the LLM layer
   against ADR 0007 (amended), ADR 0012 and ARCHITECTURE §2 / §8
 - [ ] 4.6 Code review
-- [ ] 4.7 Review findings together, fix with TDD
+- [ ] 4.7 Review findings together (walkthrough + 4.5 + 4.6), fix with TDD. Walkthrough
+  findings (details in `docs/walkthroughs/step-4-foundations.md`):
+  - F1: tests based on `model_copy(update=...)` (no validation) rebuilt through
+    `model_validate`
+  - F2 (Q2): `mypy --strict adjents/ tests/` in Makefile + CI; all 53 test errors
+    fixed, including the tests of steps 7 and 8
+  - F3 (Q1): `AgentSpec` invariants in the model (`Field` constraints / validators)
+    + reference constants in `agents/models.py`; callers rewired in 7.2 / 8.3
+  - F4: `AwareDatetime` for every `datetime` field
+  - F5: `BlockingQuestion` consistency `@model_validator` (ADR 0004 schema kept)
+  - F7: `BusinessContext` added to ARCHITECTURE §3 (+ serialization table if needed)
+  - F9: tests for the "required but nullable" contract and a JSON-mode roundtrip
+  - F12: error tests with one missing field each + assertion on `errors()` locations
+  - F10: tautological tests accepted as is (no action)
 
 ### Step 4b — Structured outputs
 
@@ -917,7 +955,10 @@ Branch: `feat/structured-outputs` — before steps 6, 7, 8, which adopt it
 
 - [ ] 4b.1 Design a provider-neutral method (Pydantic model in → validated instance
   out); check in their docs only that OpenAI and Gemini offer an equivalent; check
-  compatibility with adaptive thinking and the JSON Schema features supported
+  compatibility with adaptive thinking and the JSON Schema features supported —
+  including the `Field` constraints added to `AgentSpec` in step 4.7 (`ge` / `le`,
+  `pattern`): which keywords the provider accepts, and what the SDK does with
+  unsupported ones (checked in its sources)
 - [ ] 4b.2 **Amend** ADR 0012 (the neutral contract gains a method)
 - [ ] 4b.3 TDD: Anthropic implementation (`output_config.format` /
   `messages.parse()`), same `stop_reason` handling and typed errors as `complete()`
@@ -960,7 +1001,9 @@ Branch: `refactor/walkthrough-interview`
   an unanswered user message — decide the fix (TDD)
 - [ ] 6.3 Prompt audit for Claude 5.5 (patterns written for 4.x models — e.g.
   `/claude-api prompt-audit`); adopt structured outputs (step 4b) for interview turns
-  and `BusinessContext` extraction
+  and `BusinessContext` extraction; unknown keys in the extraction JSON are dropped
+  silently (`BusinessContext(**data)` with Pydantic's default `extra="ignore"`) —
+  decide: forbid, log, or accept (step 4.1 walkthrough)
 - [ ] 6.4 Docstrings + comments
 - [ ] 6.5 Spec review (against the 2026-05-20 Feature Brief; LLM calls against ADR
   0012) + code review, fixes
@@ -974,7 +1017,9 @@ Branch: `refactor/walkthrough-org-generation`
   `smoke_generator_org.py --llm-debug`
 - [ ] 7.2 Split `org_generation.py` (442 lines) into a package by responsibility
   (draft: `models.py`, `validation.py`, `parsing.py`, `generator.py`); split the test
-  file accordingly (one test file per module)
+  file accordingly (one test file per module); `_validate_structure` returns all
+  violations, not only the first (fewer paid retries); use the `AgentSpec` reference
+  constants from `agents/models.py` (step 4.7, Q1) instead of local literals
 - [ ] 7.3 Prompt audit for Claude 5.5 (e.g. `/claude-api prompt-audit`); adopt
   structured outputs (step 4b); the
   Generator assigns each agent's reasoning tier (step 5.1b) — prompt + validation.
@@ -992,11 +1037,18 @@ Branch: `refactor/walkthrough-team-setup`
   `agents/reconfiguration.py`, `utils/agent_context.py` → prompts `agent/intro.md` +
   `extract_agent_adjustments.md` → run `smoke_team_setup.py --real --llm-debug`
 - [ ] 8.2 B1 (TDD — failing test first): JSON-serialize `responsibilities` /
-  `escalation_rules` in `_apply_agent_updates`
+  `escalation_rules` in `_apply_agent_updates`. Same root cause: `_apply_agent_updates`
+  (both copies) and the state updates `setattr` on SQLModel table rows, which never
+  validate — route updates through the `AgentSpec` domain model (constraints from
+  step 4.7) before writing the row (step 4.1 walkthrough)
 - [ ] 8.3 B2: split `team_setup.py` (851 lines) into a package; extract the logic
   shared with `reconfiguration.py` (310 lines, past the 300-line review trigger) —
   extraction LLM call + `_apply_agent_updates` + persistence helpers + the duplicated
-  effort constants — into one module, removing the ~70 duplicated lines; split
+  effort constants — into one module, removing the ~70 duplicated lines; use the
+  `AgentSpec` reference constants from `agents/models.py` (step 4.7, Q1) instead of
+  `_INTERVAL_MIN/MAX` and the lazy `VALID_VISUAL_CHARACTERS` import; move the domain
+  models `ValidationSession`, `AgentValidationRecord`, `AgentValidationStatus` (now in
+  `team_setup.py`) into a models module; split
   `test_team_setup_orchestrator.py` (1,358 lines) accordingly
 - [ ] 8.4 Warnings A1–A5 (asserts as flow control, `validate_team` guard, circular
   import risk, misleading resumability, `reply()` before `start()` guard)
@@ -1108,6 +1160,15 @@ Branch: `feat/llm-router` — full `/feature` workflow
   every day — no day-of-week granularity, no multi-window support; per-agent independent
   schedules ARE supported (each `AgentSpec` has its own field); day-of-week variation
   (e.g. "Tue nights OK, Thu nights not") is a v0.2 enhancement
+- Pause has two representations — `AgentSpec.is_paused` (user-controlled, rule 7) and
+  `AgentStatus.PAUSED` in `AgentState` — with no documented invariant; `is_paused`
+  changes at runtime but lives in the "write-once" spec (ARCHITECTURE §3) → decided
+  with the **agent loop** design (walkthrough finding F6, step 4.1)
+- `Message.from_agent` / `to_agent` mix agent IDs and sentinel strings (`"user"`,
+  `"system"`) → decided with the **MessageDispatcher** design (ARCHITECTURE §4)
+- `Deliverable.file_path` is meant to be relative to `data/outputs/`, but nothing
+  rejects `..` or absolute paths (path traversal once deliverables are written to
+  disk) → **Deliverables feature**
 
 ---
 
@@ -1162,3 +1223,6 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-22 | Plan amended after step 3: step 4 walkthrough covers `llm/types.py` / `llm/errors.py` and reviews the LLM layer against ADRs 0007 / 0012; step 5 also adds the `AgentSpec` reasoning tier; prompt audit added for team setup (8.5c); `LLMClient` protocol in 10.2 | Keep the plan consistent with the step 3 changes; the team setup prompts were written for Sonnet 4.6 like the Generator ones |
 | 2026-10-22 | LLM call contract = ADR 0012 (0011 stays reserved for `Task`) | ADR numbers are stable identifiers; a temporary gap is harmless |
 | 2026-10-22 | Smoke scripts get `--llm-debug`; `scripts/_common.py` created in step 3 (ahead of step 8.6) | One shared logging setup instead of three copies; real usage figures to calibrate `max_tokens` |
+| 2026-10-23 | `AgentSpec` invariants (`visual_character` set, interval range, `level ≥ 0`, `work_hours` format) move into the model with reference constants in `agents/models.py` (step 4.7); callers rewired in steps 7.2 and 8.3, keeping their own policy (reject vs clamp) | "What is valid data" is independent of how the LLM produces JSON (step 4b) and applies to every writer; today the rules are duplicated in 3 places with diverging policies |
+| 2026-10-23 | mypy `--strict` also checks `tests/` (Makefile + CI); the 53 existing errors are fixed in step 4.7, including the tests of steps 7 and 8 | The tests' `# type: ignore` comments showed the intent, but nothing checked them; mechanical fixes, no logic change |
+| 2026-10-23 | Walkthrough notes (explanations, Q&A, findings, decisions) in `docs/walkthroughs/`, one file per walkthrough step | Survives `/clear`; keeps PROJECT_STATE short; separate from the subagent reports in `docs/reviews/` |
