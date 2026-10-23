@@ -969,6 +969,14 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
 - [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004, and for the LLM layer
   against ADR 0007 (amended), ADR 0012 and ARCHITECTURE §2 / §8
 - [ ] 4.6 Code review
+- For 4.5 and 4.6, the subagent prompt points to
+  `docs/walkthroughs/step-4-foundations.md` and states: findings F1–F42 are already
+  known and routed — do not report them again; report only new findings, or an
+  argued disagreement with an existing finding or decision. 4.5 focuses on what the
+  walkthrough did not check systematically: CLAUDE.md conventions (file size,
+  docstrings, no prompt strings in Python source), ADR 0004 and ADR 0010, consistency
+  between the 4.4 docstrings and the code. Rationale: avoid re-deriving known findings
+  and de-duplicating them in 4.7, while keeping an independent review
 - [ ] 4.7 Review findings together (walkthrough + 4.5 + 4.6), fix with TDD. Walkthrough
   findings (details in `docs/walkthroughs/step-4-foundations.md`):
   - F1: tests based on `model_copy(update=...)` (no validation) rebuilt through
@@ -976,7 +984,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F2 (Q2): `mypy --strict adjents/ tests/` in Makefile + CI; all 53 test errors
     fixed, including the tests of steps 7 and 8
   - F3 (Q1): `AgentSpec` invariants in the model (`Field` constraints / validators)
-    + reference constants in `agents/models.py`; callers rewired in 7.2 / 8.3
+    and reference constants in `agents/models.py`; callers rewired in 7.2 / 8.3
   - F4: `AwareDatetime` for every `datetime` field
   - F5: `BlockingQuestion` consistency `@model_validator` (ADR 0004 schema kept)
   - F7: `BusinessContext` added to ARCHITECTURE §3 and to its serialization table
