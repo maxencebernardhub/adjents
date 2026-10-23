@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-10-22 | Branch: chore/claude-5-5-migration | Milestone: v0.1 — MVP
+> Updated: 2026-10-23 | Branch: refactor/walkthrough-foundations | Milestone: v0.1 — MVP
 
 ---
 
@@ -781,7 +781,8 @@ decision agreed one by one (see Decisions log, 2026-10-22, step 3).
   (prompt rule #3: N-2 when ≥ 2 task clusters); whether this size is desirable is
   decided in the prompt audit (step 7.3).
 
-**Stopped at:** step 3 complete — PR open, waiting for CI, then merge.
+**Stopped at:** step 3 complete — PR #4 merged on 2026-10-22 (merge commit `307795e`),
+branch deleted, CI green on main. Next: step 4.
 
 ---
 
