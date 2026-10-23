@@ -801,8 +801,13 @@ Full notes (explanations, Q&A, findings, decisions) in
   runtime bug; decisions Q1–Q3 (see Decisions log, 2026-10-23).
 - `docs/walkthroughs/` created; `docs/reviews/` and `docs/walkthroughs/` added to the
   repository trees of `README.md` and ARCHITECTURE §1.
+- 4.2: database layer walked through (`tables.py`, `convert.py`, `engine.py` +
+  `conftest.py` and the 2 DB test files). 19 findings (F13–F31), no active bug —
+  `engine.py` has no caller yet, but its relative DB path (F13), the missing engine
+  tests (F14) and `expire_on_commit=True` (F15) break as soon as the FastAPI app uses
+  it; decisions Q4–Q6 (see Decisions log, 2026-10-23).
 
-**Stopped at:** 4.1 complete — next: 4.2 (database layer).
+**Stopped at:** 4.2 complete — next: 4.3 (prompts, LLM client, router).
 
 ---
 
@@ -922,7 +927,8 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
 
 - [x] 4.1 Walkthrough: models (`agents/`, `messaging/`, `memory/`, `projects/`,
   `deliverables/`, `generator/models.py`) + their tests — findings F1–F12
-- [ ] 4.2 Walkthrough: `db/` (`tables.py`, `convert.py`, `engine.py`) + tests
+- [x] 4.2 Walkthrough: `db/` (`tables.py`, `convert.py`, `engine.py`) + tests —
+  findings F13–F31
 - [ ] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
   `llm/types.py`, `llm/errors.py`, `router/router.py` + tests (incl.
   `test_llm_errors.py`)
@@ -944,10 +950,35 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     + reference constants in `agents/models.py`; callers rewired in 7.2 / 8.3
   - F4: `AwareDatetime` for every `datetime` field
   - F5: `BlockingQuestion` consistency `@model_validator` (ADR 0004 schema kept)
-  - F7: `BusinessContext` added to ARCHITECTURE §3 (+ serialization table if needed)
+  - F7: `BusinessContext` added to ARCHITECTURE §3 and to its serialization table
+    (6 list fields — confirmed in 4.2)
   - F9: tests for the "required but nullable" contract and a JSON-mode roundtrip
   - F12: error tests with one missing field each + assertion on `errors()` locations
   - F10: tautological tests accepted as is (no action)
+  - F13: DB path anchored on the repository root (`data/adjents.db`, ARCHITECTURE
+    §1) instead of the working directory; `create_db_and_tables` creates the
+    directory; test
+  - F14: engine and session factories in `db/engine.py` (no engine created at
+    import), used by `conftest.py`; new `test_db_engine.py` (`_async_url`,
+    `create_db_and_tables`, `get_session`)
+  - F15: `expire_on_commit=False` in the shared session factory + test (attribute
+    read after commit raises `MissingGreenlet` today)
+  - F17: remove the table defaults that diverge from the domain (`is_paused=False`,
+    `"[]"`…) so an omission fails with `NOT NULL` instead of a silent value
+  - F18: schema drift test (ADR 0002): domain fields == table columns, parametrized,
+    with the `metadata` → `metadata_json` rename
+  - F19 (Q5): split `db/convert.py` (404 lines) into a `db/convert/` package per
+    domain, mirroring the domain modules
+  - F21 (Q6): ARCHITECTURE §1 — remove "migrations (via SQLModel)"; §3 — fix
+    "`fromisoformat` … timezone-aware" (a naive string stays naive)
+  - F23: `test_all_tables_exist` (12 tables, exact set instead of `issubset`,
+    docstring); delete the dead `test_unused_import_unused`
+  - F25: replace the SQLAlchemy-only table tests with constraint tests (`NOT NULL`
+    rejections), alongside F18
+  - F26: `test_db_convert.py` — module-level imports; tests for a naive date, corrupt
+    JSON and an unknown enum value in a row
+  - F27: one fixture decorator style in `conftest.py` (team setup fixtures move in
+    8.3)
 
 ### Step 4b — Structured outputs
 
@@ -979,6 +1010,12 @@ Branch: `feat/task-entity` — full `/feature` workflow
     agent's role and responsibilities — not from its hierarchy level — and adjustable
     in team setup (non-structural field, ADR 0009). Produced in step 7, adjustable in
     step 8. ADR to decide (model selection by agent tier and task complexity)
+  - schema migration strategy, decided before 5.4 (the first column change on an
+    existing table — `create_all` never alters a table, so an existing
+    `adjents.db` would fail with "no such column"): (a) drop and recreate,
+    documented; (b) Alembic (new dependency); (c) hand-written migrations. Initial
+    inclination: (a) for v0.1, (b) before the first release to real users. ADR to
+    write (step 4.2 walkthrough, F22 / Q6)
 - [ ] 5.2 ADR 0011
 - [ ] 5.3 Feature Brief + Implementation Plan
 - [ ] 5.4 TDD: `Task` Pydantic model + SQLModel table + convert functions + tests;
@@ -995,7 +1032,8 @@ Branch: `refactor/walkthrough-interview`
   `prompts/generator/interview.md` + `extract_business_context.md` → run
   `smoke_generator_interview.py --llm-debug`
 - [ ] 6.2 Tech debt: `resume()` N sequential SELECTs → single `WHERE id IN (...)`
-  query (TDD, test asserting the query count)
+  query (TDD, test asserting the query count). The `message_ids` read-modify-write
+  in the same code stays out of scope (Technical debt, MessageDispatcher — F30)
 - [ ] 6.2b Partial state: `reply()` persists the user message before the LLM call, so a
   failed call (network, refusal, truncation) leaves the stored conversation ending with
   an unanswered user message — decide the fix (TDD)
@@ -1049,7 +1087,15 @@ Branch: `refactor/walkthrough-team-setup`
   `_INTERVAL_MIN/MAX` and the lazy `VALID_VISUAL_CHARACTERS` import; move the domain
   models `ValidationSession`, `AgentValidationRecord`, `AgentValidationStatus` (now in
   `team_setup.py`) into a models module; split
-  `test_team_setup_orchestrator.py` (1,358 lines) accordingly
+  `test_team_setup_orchestrator.py` (1,358 lines) accordingly. From the step 4.2
+  walkthrough: once the models have moved, `db/convert` no longer imports
+  `generator/team_setup.py` → remove the 9 lazy `db.convert` imports (F20); move the
+  validation table / conversion tests into the `db/` test files (F24) and the team
+  setup fixtures (`stub_prompt_loader`, `mini_org`, `coo_only_org`) out of the global
+  `conftest.py` (F27); `stub_prompt_loader` returns a prompt per key (`spec=LoadedPrompt`)
+  or the tests assert the requested keys (F31); decide whether to introduce a
+  repository layer (ADR 0003 mentions "repository functions"; DB access is scattered
+  across 4 orchestrators — ADR candidate, F28)
 - [ ] 8.4 Warnings A1–A5 (asserts as flow control, `validate_team` guard, circular
   import risk, misleading resumability, `reply()` before `start()` guard)
 - [ ] 8.5 Notes N1–N3: decide together (fix or accept)
@@ -1169,6 +1215,29 @@ Branch: `feat/llm-router` — full `/feature` workflow
 - `Deliverable.file_path` is meant to be relative to `data/outputs/`, but nothing
   rejects `..` or absolute paths (path traversal once deliverables are written to
   disk) → **Deliverables feature**
+- No foreign key in `db/tables.py` and SQLite's `PRAGMA foreign_keys` is off by
+  default: orphans and dangling references are accepted (checked). Scope when done:
+  plain foreign keys (`agent_states.agent_id`, `parent_id`, `blocking_questions`,
+  `deliverables`, `projects`, validation records…), a `connect` listener enabling the
+  pragma in the engine factory, sorting agents by level before insert in
+  `org_generation` (rows of one table are inserted in `add()` order, so the
+  self-referencing `parent_id` fails otherwise — checked), tests. JSON-list references
+  (`skill_ids`, `message_ids`…) would need association tables → decided with the
+  **FastAPI app / agent loop** (agent deletion, concurrent writers) (walkthrough F16,
+  step 4.2 Q4)
+- `MemoryTable` (`memories`) is used by nothing and appears in neither ARCHITECTURE §3
+  nor §7 (memory lives in Chroma): SQLite source of truth with Chroma as an index, or a
+  dead table → **Memory feature** (walkthrough F29)
+- Appending a message rewrites the whole `Conversation.message_ids` JSON array
+  (read-modify-write, `interview.py:176-197`), and `Message` has no
+  `conversation_id`: with concurrent writers, messages would be lost →
+  **MessageDispatcher** design (walkthrough F30; same code as step 6.2)
+- No schema migration strategy (`create_all` never alters an existing table) →
+  **step 5.1b** (ADR, before the first column change in 5.4)
+- No repository layer despite ADR 0003's "repository functions" → **step 8.3**
+  (walkthrough F28)
+- `make dev` starts `adjents.api.main:app`, which does not exist yet: the backend half
+  of `make dev` fails today → **FastAPI app** feature
 
 ---
 
@@ -1226,3 +1295,6 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-23 | `AgentSpec` invariants (`visual_character` set, interval range, `level ≥ 0`, `work_hours` format) move into the model with reference constants in `agents/models.py` (step 4.7); callers rewired in steps 7.2 and 8.3, keeping their own policy (reject vs clamp) | "What is valid data" is independent of how the LLM produces JSON (step 4b) and applies to every writer; today the rules are duplicated in 3 places with diverging policies |
 | 2026-10-23 | mypy `--strict` also checks `tests/` (Makefile + CI); the 53 existing errors are fixed in step 4.7, including the tests of steps 7 and 8 | The tests' `# type: ignore` comments showed the intent, but nothing checked them; mechanical fixes, no logic change |
 | 2026-10-23 | Walkthrough notes (explanations, Q&A, findings, decisions) in `docs/walkthroughs/`, one file per walkthrough step | Survives `/clear`; keeps PROJECT_STATE short; separate from the subagent reports in `docs/reviews/` |
+| 2026-10-23 | Foreign keys + `PRAGMA foreign_keys=ON` postponed to Technical debt, decided with the FastAPI app / agent loop | No orphan is possible today outside a bug (sequential writers, only skills are deleted); enabling them also requires sorting agents by level before insert in org generation — a behavior change that does not belong in a walkthrough |
+| 2026-10-23 | `db/convert.py` split into a `db/convert/` package per domain in step 4.7 (option b) | Explicit, `mypy --strict`-friendly mapping kept; files well under 300 lines; `Task` (step 5) gets its own module. Rejected: documented exception (a), generic field-list-driven converter (c: less code, but hard to type) |
+| 2026-10-23 | Schema migration strategy decided in step 5.1b with an ADR, before the first column change (5.4); ARCHITECTURE §1 "migrations (via SQLModel)" removed in step 4.7 | `create_all` only creates missing tables, so an existing `adjents.db` fails with "no such column" after a column is added (checked); no database exists on disk yet, so nothing breaks before step 5 |

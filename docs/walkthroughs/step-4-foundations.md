@@ -12,7 +12,8 @@ Findings feed steps 4.4 (docstrings), 4.5 (spec review), 4.6 (code review) and 4
 (fixes with TDD). Nothing is fixed during the reading (4.1 → 4.3).
 
 Every library behavior stated here was checked by running code against the installed
-versions (Pydantic 2.14.1), not from memory.
+versions (Pydantic 2.14.1, SQLAlchemy 2.1.6, SQLModel 0.0.48, aiosqlite 0.22.1,
+pytest-asyncio 1.4.0), not from memory.
 
 ---
 
@@ -305,7 +306,305 @@ Out of scope, recorded for other steps:
 
 ## 4.2 — Database layer
 
-*To be written.*
+Files read (tests first): `tests/conftest.py`, `test_db_tables.py`, `test_db_convert.py`
+→ `db/tables.py`, `db/convert.py`, `db/engine.py`.
+
+### Place in the flow
+
+```text
+domain (Pydantic)  ──to_table()──▶  tables (SQLModel)  ──session.add / commit──▶  SQLite
+domain (Pydantic)  ◀─from_table()──  tables (SQLModel)  ◀─session.get / exec─────  SQLite
+```
+
+- **`db/tables.py`**: 12 `table=True` classes, one per domain model (10 + the 2 team
+  setup models). No logic.
+- **`db/convert.py`**: 24 `x_to_table` / `x_from_table` functions; the only place where
+  JSON and ISO dates are (de)serialized (ADR 0002).
+- **`db/engine.py`**: async engine, `create_db_and_tables()`, `get_session()`
+  (ADR 0003). **Nothing imports it yet**: it waits for the FastAPI app (`api/` is
+  empty).
+- Today's DB writers: `interview.py`, `org_generation.py`, `team_setup.py`,
+  `reconfiguration.py`. Each receives an `AsyncSession` and goes through `convert`,
+  except the direct `setattr` writes on table rows (step 8.2).
+
+### Design choices
+
+| Choice | Why | Cost |
+| --- | --- | --- |
+| **Tables separate from domain models** (ADR 0002) | Clean domain (no `primary_key`, no JSON), FastAPI exposes schemas without persistence details, domain testable without a DB | Each field declared 3 times (model, table, `convert`); no test detects drift (F18) |
+| **`list` / `dict` → JSON text** | SQLite has no list type; explicit conversion in `convert` | No SQL query inside lists ("agents whose `skill_ids` contain X"); appending a message rewrites the whole `message_ids` array (F30). Alternative not taken: SQLAlchemy's `JSON` type (automatic serialization) |
+| **`datetime` → ISO 8601 string** | **Checked:** even `DateTime(timezone=True)` loses the offset on SQLite (`10:00+02:00` reads back as naive `10:00`, i.e. the wrong instant); the ISO string keeps it | SQL ordering is lexicographic: correct only if every date is UTC with the same format (true today; a naive date would break it — ties to F4) |
+| **`metadata` → `metadata_json` column** | `metadata` is reserved on SQLAlchemy declarative classes (the table registry) | Name differs between the two layers |
+| **Async + aiosqlite** (ADR 0003) | Never block the event loop (agent loops, WebSocket) | aiosqlite runs `sqlite3` in a background thread. **Async does not make the DB faster** (SQLite serializes writes anyway); it only keeps other coroutines running during a query |
+
+### SQLModel / SQLAlchemy async / pytest-asyncio idioms
+
+| Idiom | What to know |
+| --- | --- |
+| `class X(SQLModel, table=True)` + `__tablename__` | A SQL table. **Checked: no validation**, even at construction. Only SQL constraints apply at `commit` (`NOT NULL`: a row without `name` → `IntegrityError`). |
+| `Field(primary_key=True)` / `Field(default=...)` | `str` → `NOT NULL`, `str \| None` → nullable. SQLite indexes the primary key automatically — the only index (F16). |
+| `import adjents.db.tables  # noqa: F401` | Defining a `table=True` class registers it in the global `SQLModel.metadata`. The **module must be imported** before `create_all`, otherwise no table is created. `noqa: F401` tells ruff the "unused" import is intended. |
+| `create_async_engine("sqlite+aiosqlite:///...")` | `sqlite+aiosqlite` = dialect + driver. For `:memory:`, SQLAlchemy uses a `StaticPool` (checked): one shared connection, otherwise each connection would see an empty database. |
+| `async with engine.begin() as conn: await conn.run_sync(SQLModel.metadata.create_all)` | `begin()` opens a transaction committed at block exit. `create_all` is a sync API; `run_sync` runs it through the **greenlet bridge** SQLAlchemy uses to run its sync core inside a coroutine. |
+| `AsyncSession` (`sqlmodel.ext.asyncio`) | Subclass of SQLAlchemy's. `session.add(obj)` touches nothing in the DB; `await session.commit()` writes. `await session.get(Table, pk)` checks the *identity map* (the session cache) first, then issues a `SELECT`. |
+| `session.exec(select(...))` / `session.execute(...)` | `exec` is SQLModel's API, typed for `select()`, returns model objects. Raw SQL (`text(...)`) goes through `execute` — hence the `# type: ignore[call-overload]` in `test_db_tables.py:364`. |
+| `expire_on_commit` (default `True`) | After a commit, objects are "expired": reading an attribute triggers a reload, which is forbidden in async. **Checked:** `row.name` after commit raises `MissingGreenlet`. The SQLAlchemy asyncio docs examples use `expire_on_commit=False` (F15). |
+| `AsyncGenerator[AsyncSession]` | Since Python 3.13 the second type parameter (`SendType`) has a default (PEP 696), hence the single argument. |
+| `async` fixture with `yield` | `asyncio_mode = "auto"` (`pyproject.toml`): pytest-asyncio 1.4 treats every `async` test and fixture as asyncio. `@pytest.fixture` and `@pytest_asyncio.fixture` are equivalent here; `conftest.py` mixes both (F27). |
+| `json.dumps` | `ensure_ascii=True` by default: `€` stored as `€`; the roundtrip is exact (checked). |
+| `str(StrEnum)` / `AgentStatus(row.status)` | `str()` of a `StrEnum` gives the value (`"working"`); the enum constructor raises `ValueError` on an unknown value. |
+
+### Per file
+
+**`tests/conftest.py` (210 lines)** — see Q&A C1 for what a `conftest.py` is.
+
+- `async_session`: one in-memory engine **per test** (full isolation), `create_all`, a
+  session, then `dispose()`.
+- It **does not use `engine.py`**: it rebuilds its own configuration, so the production
+  configuration is never tested (F14).
+- It also holds three team setup fixtures (`stub_prompt_loader`, `mini_org`,
+  `coo_only_org`) — step 8 territory (F27).
+
+**`db/tables.py` (164 lines)**
+
+- Matches the §3 serialization table, except `BusinessContext`, missing from it (F7
+  confirmed).
+- **Table defaults diverge from the domain**: `is_paused=False` while §5 says agents are
+  created paused; `"[]"` for lists. `convert` always passes every field, but a direct
+  writer silently gets these defaults (F17).
+- **No foreign key, `PRAGMA foreign_keys` = 0.** Checked: an orphan `AgentState` with
+  `status="flying"` and `updated_at="not a date"` is accepted. The "no orphan agent"
+  invariant of §3 holds only through the code (F16, Q&A C4).
+- `MemoryTable` is used by nothing, and neither §3 nor §7 mentions it (§7 puts memory
+  in Chroma). Open question: SQLite as source of truth with Chroma as an index, or a
+  dead table (F29).
+
+**`db/convert.py` (404 lines)**
+
+- One responsibility (mapping) repeated 12 times, fully mechanical.
+- Above the 300-line review trigger; the `Task` entity (step 5) brings it close to the
+  500-line hard limit (F19).
+- **Inverted coupling**: it imports models from `generator/team_setup.py`, a business
+  module; `team_setup` works around the circular import with 9 lazy imports of
+  `db.convert` (`team_setup.py:141` to `817`). Same as A3 of the step 8 review; goes
+  away when these models move (8.3) (F20).
+
+**`db/engine.py` (35 lines)**
+
+- The engine is created **at module import** (side effect, environment read at load
+  time).
+- `_async_url` rewrites `sqlite:///` into `sqlite+aiosqlite:///`.
+- **Relative path** `./data/adjents.db`: depends on the working directory. `make dev`
+  starts uvicorn from `backend/`, so the DB would be `backend/data/adjents.db`; that
+  directory does not exist and SQLite does not create parent directories ("unable to
+  open database file"). §1 puts `data/` at the repository root (F13).
+- `get_session` keeps `expire_on_commit=True` (F15).
+
+### Tests (1,109 lines)
+
+**`test_db_tables.py` (384 lines)**
+
+- Covered: insert then read back for each of the 10 domain tables, nullable cases,
+  table existence.
+- Mostly tests SQLAlchemy and overlaps the `convert` roundtrips.
+- Not covered: `NOT NULL` rejections; columns matching domain fields (F18, F25).
+- `test_all_tables_exist` says "10 tables" while 12 exist, and `issubset` would let the
+  2 team setup tables go missing; `test_unused_import_unused` (line 381) is dead code
+  that checks nothing (F23).
+
+**`test_db_convert.py` (515 lines)**
+
+- One real roundtrip per model (domain → table → SQLite → table → domain), plus
+  nullable cases. **`message_ids` order is asserted** (line 250) — answers the open
+  point of 4.1 (F10).
+- Not covered: a naive date (it comes back naive, checked); corrupt JSON or an unknown
+  enum value in a row (the error path a direct writer could trigger); the team setup
+  tables, tested elsewhere (F24).
+- Table imports are repeated locally inside each test (F26).
+
+### Corrections to the first presentation
+
+1. In Q4 (foreign keys): "no code deletes rows" — false. `reconfiguration.py:216` and
+   `team_setup.py:625` call `session.delete(skill)` when a skill is removed from an
+   agent (the skill row is deleted and its id removed from `skill_ids` in the same
+   transaction). A foreign key would not protect this case anyway: `skill_ids` is a
+   JSON list.
+
+### Q&A
+
+**C1 — What is `conftest.py` for? Who uses it? Why no `assert`?**
+
+- A pytest-specific file, not a test file: it has no `assert` because it checks
+  nothing; it **prepares** what tests need.
+- **Automatic discovery**: pytest loads every `conftest.py` of the test directory;
+  nobody imports it.
+- **Fixtures**: a function decorated with `@pytest.fixture` becomes a resource available
+  to **every** test of the directory, without import.
+- **Injection by name**: a test gets a fixture by declaring a parameter with the same
+  name; pytest runs the fixture and passes its result.
+- **Chaining**: a fixture can depend on another the same way. `mini_org(async_session)`
+  receives the session, so a test asking for `mini_org` gets the session **and** the
+  org already inserted in it.
+
+| Fixture | Used by |
+| --- | --- |
+| `async_session` | `test_db_tables`, `test_db_convert`, `test_generator_interview`, `test_generator_org_generation`, `test_team_setup_orchestrator`, `test_agent_reconfiguration` |
+| `stub_prompt_loader` | `test_team_setup_orchestrator`, `test_agent_reconfiguration` |
+| `mini_org` | `test_team_setup_orchestrator`, `test_agent_reconfiguration` |
+| `coo_only_org` | `test_team_setup_orchestrator`, `test_team_setup`, `test_generator_org_generation` |
+
+**C2 — What does each function of `conftest.py` do?**
+
+- `async_session` (l.24-31): a fresh, empty database for each test. `yield` splits the
+  fixture in two: setup before, teardown after (runs even if the test fails). A fixture
+  is re-run **for every test** by default, so no test sees another's data and test
+  order does not matter.
+- `stub_prompt_loader` (l.34-40): a fake `PromptLoader`. Team setup and reconfiguration
+  need a loader for their system prompts; the fake avoids reading the real `.md` files
+  and makes the tests independent of prompt wording. Whatever the key, `loader.get(...)`
+  returns an object whose `.content` is `"You are a helpful agent."`.
+- `mini_org` (l.43-163): inserts a 3-agent org (COO → N-1 Finance → N-2 Invoicing), one
+  skill each, all `PAUSED`, through `convert` (same path as production); returns the 3
+  ids.
+- `coo_only_org` (l.166-210): edge case of a COO-only org, for the paths without N-1.
+
+**C3 — What is `MagicMock()`?** A standard library object (`unittest.mock`) that
+**accepts everything and records everything**: any attribute exists (`m.foo.bar`), any
+call succeeds (`m.get("x")`) and returns another `MagicMock`, and calls are recorded
+(`m.get.call_args`, `m.get.assert_called_with(...)`).
+
+- `MagicMock(spec=PromptLoader)`: only `PromptLoader` attributes exist; a typo
+  (`loader.gett(...)`) raises `AttributeError` instead of passing silently.
+- Limit 1: `stub` has no `spec`. If the code called `prompt.render(...)` instead of
+  `.content`, it would get a `MagicMock` as system prompt and the test would still pass.
+  The code only uses `.content` today (checked) — no effect.
+- Limit 2: the loader returns the same prompt for **every** key and no test checks which
+  key is requested (`loader.get.call_args` appears nowhere, checked). Swapping the
+  intro and extraction prompts would go unnoticed (F31).
+
+**C4 — Which foreign keys? What is `PRAGMA foreign_keys=ON`? Why add them?**
+
+- A **foreign key** is a schema rule: "this column's value must exist as a primary key
+  in that table" (e.g. `agent_states.agent_id` → `agent_specs.id`). The database then
+  refuses whatever would break the link: a state for a missing agent, deleting an agent
+  still referenced.
+- `PRAGMA` is SQLite's connection configuration command. **SQLite quirk**: for
+  historical compatibility, foreign key enforcement is **off by default**, even when
+  foreign keys are declared; `PRAGMA foreign_keys=ON` must run on **every** connection
+  (with SQLAlchemy, through a `connect` event listener). Today both are missing: no
+  foreign key declared, pragma off.
+- Candidates in `db/tables.py`:
+
+  | Column | → references |
+  | --- | --- |
+  | `agent_states.agent_id` (l.33) | `agent_specs.id` |
+  | `agent_specs.parent_id` (l.17) | `agent_specs.id` (**self-reference**) |
+  | `messages.parent_message_id` (l.59) | `messages.id` (self-reference) |
+  | `blocking_questions.agent_id` (l.111) | `agent_specs.id` |
+  | `deliverables.agent_id` / `project_id` (l.86-87) | `agent_specs.id` / `projects.id` |
+  | `projects.lead_agent_id` (l.101) | `agent_specs.id` |
+  | `memories.agent_id` (l.76) | `agent_specs.id` (`None` = global KB) |
+  | `business_contexts.conversation_id` (l.124) | `conversations.id` |
+  | `agent_validation_records.session_id`, `root_agent_id`, `active_agent_id`, `active_conversation_id` (l.156-160) | `validation_sessions`, `agent_specs`, `conversations` |
+
+- Not possible as is: **JSON lists** (`skill_ids`, `message_ids`, `meeting_with`,
+  `participant_agents`…) — a foreign key applies to a plain column, not to an array
+  stored as text; protecting them would need **association tables** (e.g.
+  `agent_skills(agent_id, skill_id)`). `messages.from_agent` / `to_agent` also hold
+  sentinel strings.
+- Benefit: **the database itself guarantees consistency**, whatever code writes —
+  today it relies on the discipline of 4 orchestrators plus direct `setattr` writes. A
+  bug cannot create orphans; the error surfaces at the faulty write, not three screens
+  later; the schema documents the relations.
+- Checked by script (FK declared, pragma on vs off):
+
+  | Scenario | Pragma off (today) | Pragma on + FK |
+  | --- | --- | --- |
+  | Orphan `AgentState` | accepted | **rejected** |
+  | Child added before parent, **different tables**, same commit | OK | **OK** (SQLAlchemy orders tables from the foreign keys) |
+  | Child added before parent, **same table** (`parent_id`) | OK | **FAIL** (without `relationship()`, rows of one table are inserted in `add()` order) |
+  | Deleting a still-referenced agent | accepted | **rejected** |
+
+  Consequence: `org_generation.py:432` inserts agents **in the order the LLM returned
+  them**. With the `parent_id` foreign key on, an org where the LLM lists an N-2 before
+  its N-1 would fail at commit. Enabling foreign keys therefore also means sorting
+  agents by level before inserting (or declaring `relationship()`): a code change, not
+  only a schema change.
+
+**C5 — Which "migration" is Q6 about?** A **schema migration**: evolving the
+**structure** of a database that **already exists on disk** when the table code
+changes (not a data migration from another system, not the Claude 5.5 migration).
+
+1. A user runs Adjents v0.1 and completes onboarding: `data/adjents.db` holds their
+   agents.
+2. Step 5.4 adds a column to `AgentSpecTable` (the reasoning tier, step 5.1b).
+3. They update and restart. `create_all` **only creates missing tables**: `agent_specs`
+   exists, so nothing happens and the column is never added.
+4. First `SELECT` on agents: crash. Checked by script (v1 table, then the same file read
+   with a v2 table that has one more column):
+   `OperationalError: no such column: agent.reasoning_tier`.
+
+A new **table** (`Task`) is not a problem — `create_all` creates it. Added, renamed or
+dropped **columns** are.
+
+| Option | Principle | Pros | Cons |
+| --- | --- | --- | --- |
+| (a) Drop and recreate | On a schema change, delete `adjents.db` (documented, possibly detected at startup) | No tooling; acceptable while no real user data exists | The user loses their org and redoes onboarding |
+| (b) Alembic | SQLAlchemy's standard migration tool: each schema change is a versioned script (`ALTER TABLE ... ADD COLUMN`), applied at startup | Data kept; standard practice | **New dependency** (explicit request required); on SQLite some changes require recreating the table (Alembic "batch mode") |
+| (c) Hand-written migrations | A `schema_version` table and a few `ALTER TABLE` functions | No dependency | Reinventing Alembic, worse |
+
+Why now: no database exists on disk today (`engine.py` unused, tests in memory), step
+5.4 is the **first column change**, and ARCH §1 already announces "migrations (via
+SQLModel)" — SQLModel has no migration system.
+
+### Findings — block 4.2
+
+Numbering continues from 4.1. Severity: 🟠 medium · 🟢 low. No active bug (`engine.py`
+has no caller); F13–F15 become bugs as soon as the FastAPI app uses it.
+
+| # | File:line | Category | Sev. | Finding → recommendation | Step |
+| --- | --- | --- | :-: | --- | --- |
+| F13 | `db/engine.py:23` | Latent bug / deviation from ARCH §1 | 🟠 | Relative DB path depends on the working directory; from `backend/`, `data/` does not exist → opening fails → anchor the path on the repository root, create the directory in `create_db_and_tables`, test | 4.7 |
+| F14 | `db/engine.py:22-35`, `conftest.py:24-31` | Missing test / debt | 🟠 | No `test_db_engine.py`; engine created at import; `conftest` replicates the configuration instead of using production's → engine and session factories used by `conftest`, tests for `_async_url`, `create_db_and_tables`, `get_session` | 4.7 |
+| F15 | `db/engine.py:34`, `conftest.py:29` | Latent bug | 🟠 | `expire_on_commit=True` → `MissingGreenlet` when reading an attribute after commit (checked) → `expire_on_commit=False` in the shared factory + test | 4.7 |
+| F16 | `db/tables.py` | Debt | 🟢 | No foreign key (pragma off), no secondary index: orphans and invalid values accepted → Technical debt, decided with the API / agent loop (Q4) | tech debt |
+| F17 | `db/tables.py:17-25` and others | Debt | 🟢 | Table defaults diverge from the domain and §5 (`is_paused=False`) → remove them: an omission becomes a visible `NOT NULL` error instead of a silent value | 4.7 |
+| F18 | `db/` (no test) | Missing test / deviation from ADR 0002 | 🟠 | ADR 0002 says "a test can detect schema drift": none exists → parametrized test "domain fields == table columns" (with the `metadata_json` rename) | 4.7 |
+| F19 | `db/convert.py` (404 lines) | Debt (size) | 🟢 | Above the 300-line trigger, `Task` arrives in step 5 → split into a `db/convert/` package per domain (Q5) | 4.7 |
+| F20 | `db/convert.py:34-38`, `team_setup.py:141…817` | Debt | 🟠 | `db/` depends on `generator/team_setup.py`, hence 9 lazy imports → resolved by the model move (8.3, already planned), then remove the lazy imports | 8.3 |
+| F21 | ARCH §3 l.432-435, §1 l.29 | Docs | 🟢 | "`fromisoformat` … timezone-aware" is inaccurate (a naive string stays naive, checked); §1 announces "migrations (via SQLModel)" that do not exist; `BusinessContext` missing from the serialization table (F7) → fix §1 and §3 | 4.7 |
+| F22 | `db/engine.py:29-30` | Debt / decision | 🟠 | `create_all` never alters an existing table; no migration strategy (ADR 0002 mentions one); step 5.4 adds a column to `AgentSpec` → decide in 5.1b with an ADR (Q6) | 5.1b |
+| F23 | `test_db_tables.py:359,381` | Readability | 🟢 | Docstring says "10 tables" (12 exist), `issubset` too permissive, dead `test_unused_import_unused` → fix, delete | 4.7 |
+| F24 | `test_team_setup_models.py`, `test_team_setup_orchestrator.py` | Convention deviation | 🟢 | Team setup tables and conversions tested outside the `db/` test files ("one test file per source module") → move with the models | 8.3 |
+| F25 | `test_db_tables.py` | Missing test | 🟢 | Mostly tests SQLAlchemy; no `NOT NULL` rejection tested → replace with constraint tests, alongside F18 | 4.7 |
+| F26 | `test_db_convert.py:66,97,…` | Missing test / readability | 🟢 | Repeated local imports; no test for a naive date, corrupt JSON or unknown enum in a row → add | 4.7 |
+| F27 | `conftest.py:24-210` | Readability | 🟢 | Team setup fixtures in the global `conftest`, mixed fixture decorators → harmonize decorators in 4.7, move team setup fixtures in 8.3 | 4.7, 8.3 |
+| F28 | ADR 0003 ("repository functions") | Deviation / debt | 🟠 | No repository layer: `session.get` / `exec`, `convert` and direct writes scattered across 4 orchestrators — one cause of B1 and of `team_setup`'s size → decide in 8.3 (ADR candidate) | 8.3 |
+| F29 | `db/tables.py:72` | Deviation / ambiguity | 🟢 | `MemoryTable` used by nothing, absent from §7 (memory in Chroma) → Technical debt, Memory feature | tech debt |
+| F30 | `interview.py:176-197` | Debt | 🟢 | Appending a message = read then rewrite the `message_ids` JSON array; `Message` has no `conversation_id`. With concurrent writers (dispatcher), messages would be lost → Technical debt, `MessageDispatcher` design (with 6.2) | tech debt |
+| F31 | `conftest.py:34-40` | Missing test | 🟢 | Fake loader returns the same prompt for every key and no test checks which key is requested → `stub` with `spec=LoadedPrompt`, per-key return (or assert on `get.call_args`) | 8.3 |
+
+Out of scope, recorded for other steps:
+
+- `make dev` starts `adjents.api.main:app`, which does not exist yet: the backend half of
+  `make dev` fails today → FastAPI app feature.
+
+### Decisions — block 4.2 (2026-10-23)
+
+- **Q4 — Foreign keys**: postponed to Technical debt, decided with the API / agent loop
+  (when agent deletion and concurrent writers appear). Scope when done: plain foreign
+  keys, pragma listener in the engine factory (F14), sort agents by level in
+  `org_generation` before insert, tests.
+- **Q5 — `convert.py`**: option (b), split into a `db/convert/` package per domain
+  (`agents.py`, `messaging.py`, `generator.py`…), mirroring the domain modules, in
+  **4.7**. Rejected: (a) accept as a documented exception; (c) a generic converter
+  driven by field lists (less code, but magic that is hard to type under
+  `mypy --strict`).
+- **Q6 — Schema migration strategy**: decided in **5.1b** with an ADR, before the first
+  column change (5.4). Initial inclination: (a) drop and recreate for v0.1, (b) Alembic
+  before the first release distributed to real users. ARCH §1 "migrations (via
+  SQLModel)" corrected in **4.7** (F21).
+- F13–F31 routed to the target steps listed above (no objection raised).
 
 ---
 
