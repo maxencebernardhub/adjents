@@ -13,7 +13,8 @@ Findings feed steps 4.4 (docstrings), 4.5 (spec review), 4.6 (code review) and 4
 
 Every library behavior stated here was checked by running code against the installed
 versions (Pydantic 2.14.1, SQLAlchemy 2.1.6, SQLModel 0.0.48, aiosqlite 0.22.1,
-pytest-asyncio 1.4.0), not from memory.
+pytest-asyncio 1.4.0, `anthropic` 2.1.0 — SDK behavior read in its sources), not from
+memory.
 
 ---
 
@@ -34,7 +35,7 @@ Files read (tests first): `test_models_agents.py` → `agents/models.py`,
 `test_models_deliverables.py` → `deliverables/models.py`, `test_models_generator.py` →
 `generator/models.py`.
 
-### Place in the flow
+### Place in the flow — block 4.1
 
 - These modules are the **domain / API layer** of ADR 0002: plain Pydantic
   `BaseModel` classes, no database import.
@@ -85,7 +86,7 @@ At the time, the only producer of agents (org generation) validated on its own.
 | `datetime` | A **naive** datetime is accepted; a `"...Z"` string is parsed as aware. `AwareDatetime` requires a timezone. |
 | SQLModel `table=True` classes | **Do not validate** — even at construction. Checked: `AgentSpecTable(level="N-1", scheduler_interval_seconds=-5, ...)` is accepted. (Detailed in 4.2.) |
 
-### Per file
+### Per file — block 4.1
 
 **`agents/models.py` (60 lines)**
 
@@ -178,7 +179,7 @@ Not covered, and why:
   `test_conversation_message_ids_ordered` test Pydantic / Python lists, not our code.
   Order loss is a DB serialization risk (checked in 4.2).
 
-### Corrections to the first presentation
+### Corrections to the first presentation — block 4.1
 
 Three statements made when presenting 4.1 were wrong and were corrected in the Q&A:
 
@@ -195,7 +196,7 @@ Three statements made when presenting 4.1 were wrong and were corrected in the Q
    used when mypy runs on them; the 40 `unused-ignore` errors are in the org
    generation and team setup tests.
 
-### Q&A
+### Q&A — block 4.1
 
 **A1–A5 — What do the `pytest.raises` tests check?** That an invalid object is
 refused at construction. Exact errors in the table above. A2 has 4 missing fields
@@ -309,7 +310,7 @@ Out of scope, recorded for other steps:
 Files read (tests first): `tests/conftest.py`, `test_db_tables.py`, `test_db_convert.py`
 → `db/tables.py`, `db/convert.py`, `db/engine.py`.
 
-### Place in the flow
+### Place in the flow — block 4.2
 
 ```text
 domain (Pydantic)  ──to_table()──▶  tables (SQLModel)  ──session.add / commit──▶  SQLite
@@ -354,7 +355,7 @@ domain (Pydantic)  ◀─from_table()──  tables (SQLModel)  ◀─session.ge
 | `json.dumps` | `ensure_ascii=True` by default: `€` stored as `€`; the roundtrip is exact (checked). |
 | `str(StrEnum)` / `AgentStatus(row.status)` | `str()` of a `StrEnum` gives the value (`"working"`); the enum constructor raises `ValueError` on an unknown value. |
 
-### Per file
+### Per file — block 4.2
 
 **`tests/conftest.py` (210 lines)** — see Q&A C1 for what a `conftest.py` is.
 
@@ -422,7 +423,7 @@ domain (Pydantic)  ◀─from_table()──  tables (SQLModel)  ◀─session.ge
   tables, tested elsewhere (F24).
 - Table imports are repeated locally inside each test (F26).
 
-### Corrections to the first presentation
+### Corrections to the first presentation — block 4.2
 
 1. In Q4 (foreign keys): "no code deletes rows" — false. `reconfiguration.py:216` and
    `team_setup.py:625` call `session.delete(skill)` when a skill is removed from an
@@ -430,7 +431,7 @@ domain (Pydantic)  ◀─from_table()──  tables (SQLModel)  ◀─session.ge
    transaction). A foreign key would not protect this case anyway: `skill_ids` is a
    JSON list.
 
-### Q&A
+### Q&A — block 4.2
 
 **C1 — What is `conftest.py` for? Who uses it? Why no `assert`?**
 
@@ -610,4 +611,255 @@ Out of scope, recorded for other steps:
 
 ## 4.3 — Prompts, LLM client, router
 
-*To be written.*
+Files read (tests first): `test_prompts_loader.py` → `prompts/loader.py`,
+`llm/types.py`, `test_llm_errors.py` → `llm/errors.py`, `test_llm_anthropic.py` →
+`llm/anthropic_client.py`, `test_router.py` → `router/router.py`. The `claude-api`
+skill was loaded first; every SDK statement below comes from the installed SDK sources
+(`backend/.venv/.../anthropic/`) or from a probe running the real SDK behind a mock
+HTTP transport (`httpx2.MockTransport`).
+
+### Place in the flow — block 4.3
+
+```text
+orchestrator (interview, org_generation, team_setup, reconfiguration)
+  ├─ PromptLoader.get("generator/interview").content  ─▶ system prompt (str)
+  ├─ LLMRouter.get_generator_client() / get_team_setup_client()  ─▶ AnthropicClient
+  └─ await client.complete(messages, effort=..., system=..., max_tokens=...)
+        └─ anthropic SDK: messages.stream(...) ─▶ get_final_message()
+        └─ _extract_text: stop_reason checked ─▶ str  or  LLM*Error
+```
+
+| File | Role | Called by |
+| --- | --- | --- |
+| `prompts/loader.py` (64 lines) | Reads `.md` files, splits the frontmatter, caches | 4 orchestrators + 3 smoke scripts |
+| `llm/types.py` (16 lines) | `Effort = Literal["low", "medium", "high"]` | `anthropic_client`, caller constants |
+| `llm/errors.py` (75 lines) | `LLMResponseError` ⊃ `LLMRefusalError`, `LLMTruncatedError` | raised by the client, caught by the smoke scripts |
+| `llm/anthropic_client.py` (159 lines) | The only LLM call site | through the router |
+| `router/router.py` (41 lines) | The only place a model is chosen (rule 4) | the 3 smoke scripts; in production nothing builds the router yet — orchestrators receive a client (injection) |
+
+### Conformance — block 4.3
+
+- **ADR 0012**: all 6 points conform — neutral `complete()` (no Anthropic type on the
+  caller side); keyword-only `effort` without default; `max_tokens` default 16000 and
+  `stop_reason` / `output_tokens` logged at DEBUG; 3 typed errors with `stop_reason`
+  checked **before** reading text; no `fallbacks`; explicit
+  `thinking: adaptive + summarized` with summaries on a dedicated logger.
+- **ADR 0007 (amended, always stream)**: rationale checked.
+  `_calculate_nonstreaming_timeout` (`_base_client.py:854`) refuses a non-streaming
+  call when `3600 × max_tokens / 128000 > 600`, i.e. above 21,333 `max_tokens`; the
+  `MODEL_NONSTREAMING_TOKENS` table (8,192 cap) only lists Opus 4 / 4.1 IDs. The
+  module docstring is accurate.
+- **ARCH §8**: the "Status: minimal implementation" note is accurate.
+- **ARCH §9**: three deviations (F35) — the `loader.render(...)` example does not exist
+  (`render` is a `LoadedPrompt` method and only takes `str` values); "reads all `.md`
+  files at server startup" (`load_all()` is called nowhere); the example passes a `str`
+  where the constructor takes a `Path`.
+
+### What the SDK actually does (checked)
+
+| Behavior | Evidence |
+| --- | --- |
+| The request body holds `stream: true`, `thinking: {"type": "adaptive", "display": "summarized"}`, `output_config: {"effort": "medium"}`; `system` only when given | Probe: real SDK + mock transport, JSON body actually serialized |
+| `get_final_text()` ignores `stop_reason` and raises `RuntimeError` without a text block | `lib/streaming/_messages.py:269-288` — hence `get_final_message()` in the client |
+| `StopReason` values: `end_turn`, `max_tokens`, `stop_sequence`, `tool_use`, `pause_turn`, `refusal`, `model_context_window_exceeded` | `types/stop_reason.py`. The client handles all of them: `end_turn` accepted, 2 → truncation, `refusal` → refusal, the rest → `LLMResponseError` |
+| `RefusalStopDetails.category`: `cyber`, `bio`, `frontier_llm`, `reasoning_extraction`, `general_harms` or `None` | `types/refusal_stop_details.py` |
+| Default retries: 2, on 408 / 409 / 429 / 5xx / 529 and connection errors | Probe: a 529 on the initial response → `OverloadedError` after **3 requests** |
+| **Error event in the middle of a 200 stream** (e.g. `overloaded_error`) | Probe: **generic `APIStatusError` with `status_code == 200`**, not `OverloadedError`, and **no retry** (1 request). The status error is built from the initial HTTP status (`_client.py:566-602`, `_streaming.py:228`) → F38 |
+
+### Design choices — block 4.3
+
+| Choice | Why | Cost |
+| --- | --- | --- |
+| **Prompts in `.md` + hand-written frontmatter parser** | Prompts editable without code (§9); no PyYAML dependency (no dependency without request) | Limited parser: with CRLF line endings or an unterminated frontmatter, the frontmatter is **sent to the LLM** inside the system prompt; `true`, `-3`, `1.5` stay strings (checked, F33) |
+| **`render()` through `str.format_map`** | Standard library templating | The prompts' JSON braces are read as placeholders → `KeyError` on 3 of the 5 production prompts (checked, F32); callers use `.content` |
+| **Neutral contract** (`list[dict[str, str]]`, `Effort`, own errors) | Step 10 plugs OpenAI / Gemini without touching callers (ADR 0012) | The client builds its parameters in a `dict[str, Any]`, so **mypy no longer checks the SDK call** (checked, F36) |
+| **`effort` without default** | The API default changed silently (`high` → `medium` on Opus 5.5) | Constants scattered in 4 callers until step 10 (already in Technical debt) |
+| **Exceptions rather than `None` / partial text** | Truncated or refused text can never pass as a complete answer | No retry in callers (ADR 0012: a refusal would repeat) |
+| **Separate thinking logger** (`adjents.llm.thinking`) | Summaries contain user business data: on purpose only | Checked: DEBUG on `adjents.llm.anthropic_client` does not enable it, but DEBUG on **`adjents` or the root logger does** — "opt-in" depends on the future app's logging configuration (F42) |
+| **Router: one method per role, clients built at init** | Minimal shape that enforces rule 4 | 2 `AsyncAnthropic` instances (2 connection pools), never closed (`close()` exists, `_base_client.py:1912`) (F39) |
+
+### Python / SDK / pytest idioms
+
+| Idiom | What to know |
+| --- | --- |
+| `Effort = Literal[...]` followed by a string | A type alias. The string below is an "attribute docstring": ignored at runtime, shown by IDEs and Sphinx. |
+| `*` in `complete(self, messages, *, effort, ...)` | Everything after it is **keyword-only**: `complete(msgs, "high")` raises `TypeError`. With no default, a forgotten `effort` is caught by mypy. |
+| `@property def model` | Read-only attribute (see Q&A D2). |
+| `class LLMRefusalError(LLMResponseError)` + `super().__init__(message)` | The hierarchy lets callers catch the 3 cases at once (`except LLMResponseError`) or one of them; see Q&A D1. Deliberately not a `ValueError`, which an unrelated `except` could swallow. |
+| `async with client.messages.stream(...) as stream` | An *async context manager*: `__aenter__` sends the HTTP request (retries happen **here**), `__aexit__` closes the stream even on exception. `await stream.get_final_message()` consumes the stream and returns the rebuilt `Message`. |
+| `isinstance(block, TextBlock)` | `message.content` is a union discriminated by `type` (12 block types); `thinking` / `redacted_thinking` blocks are skipped. |
+| `frozenset({...})` module constant | Immutable set, constant-time membership test. |
+| `_log = logging.getLogger(__name__)` | Logger named after the module path; loggers form a dotted hierarchy (see the thinking logger row above). |
+| `@dataclass class LoadedPrompt` | Generates `__init__`, `__repr__`, `__eq__`; no validation (unlike Pydantic), mutable. |
+| `patch("adjents.llm.anthropic_client.anthropic.AsyncAnthropic")` | Patch the object **where it is looked up** (the client's module), not where it is defined: the client then builds a `MagicMock` instead of the real SDK. |
+| `_FakeStream` with `__aenter__` / `__aexit__` / `get_final_message` | *Duck typing*: only the methods used are needed; a plain `MagicMock` cannot be used with `async with`. |
+| `caplog`, `monkeypatch`, `parametrize`, `raises(match=...)` | pytest built-ins: log capture; environment changes undone after the test; one run per value; `match` is a **regex** applied to `str(exc)`. |
+
+### Tests (518 lines)
+
+**`test_prompts_loader.py` (72 lines, 9 tests)**
+
+- Covered: `get` on a real prompt; `int` / `str` frontmatter; missing file; cache
+  (`p1 is p2`); `render` on synthetic content.
+- Not covered: the parser (no frontmatter, unterminated, CRLF, line without a colon-space separator);
+  `render` on a real prompt (it would fail); a missing variable.
+- `test_load_all_caches_multiple_prompts` **counts files on disk** and never looks at
+  the cache; `test_load_all_caches_all_prompts` would pass without `load_all()` (`get`
+  loads anyway). `"claude" in model_hint` ties the test to a real prompt's content — it
+  breaks when step 10 decides `model_hint`'s fate (F34).
+
+**`test_llm_errors.py` (42 lines)** — complete for its scope (attributes, hierarchy,
+not a `ValueError`, unknown category).
+
+**`test_llm_anthropic.py` (340 lines, 25 tests)** — very complete **above the SDK**:
+every parameter sent and the absence of forbidden ones, multi-block text, thinking
+skipped, refusal with / without details and mid-stream, the 3 truncations, empty
+text, unexpected `stop_reason`, logs (DEBUG usage, WARNING without content, thinking
+logger enabled / silent by default).
+
+- Not covered: the **real SDK** — `AsyncAnthropic` is replaced by a mock, so the
+  request is never serialized and the SSE stream never parsed (F37; the probe shows a
+  transport-level test is straightforward); `stop_reason=None`; propagation of SDK HTTP
+  errors.
+
+**`test_router.py` (64 lines)** — covered: model per role, error without a key, neutral
+error message. **`direct_key_takes_priority_over_env` does not check the priority** (it
+only asserts `isinstance`); `reads_key_from_env` does not check that the environment
+key is used; `router is not None` is always true (F40).
+
+### Corrections to the first presentation — block 4.3
+
+1. Q7: my first recommendation was not option (a) but a status quo (keep `render()`,
+   warn in its docstring, decide with the agent loop). Detailing the options for the
+   decision changed it to (a): dead code that fails on first use is worse than no code.
+2. Older decision corrected (PROJECT_STATE, session 2026-05-22): "`prompt.content` used
+   instead of `prompt.render()` to avoid `str.format_map()` breakage on **user-supplied**
+   curly braces". In fact the **prompts' own JSON braces** break `render()`, even with no
+   variable at all (checked on `org_generation`, `extract_agent_adjustments`,
+   `interview`). The conclusion (use `.content`) stands; the rationale was wrong.
+
+### Q&A — block 4.3
+
+**D1 — What are the `super()` calls in `errors.py` for?** `super()` returns the next
+class in the method resolution order (the parent here), to call the parent version of
+a redefined method. Hierarchy (checked): `LLMRefusalError → LLMResponseError →
+Exception`.
+
+- In `LLMResponseError`, `super().__init__(message)` hands the message to `Exception`,
+  which provides `str(err)` (logs, tracebacks) and `err.args`.
+- In the subclasses, `super().__init__(...)` reuses the parent constructor: the
+  subclass computes the message and fixes `stop_reason` (`"refusal"`), the parent
+  stores `stop_reason` and `model`. Nothing is written twice, and a new attribute on
+  `LLMResponseError` reaches the subclasses unchanged.
+- Without `super()` (checked): an exception built with **keyword-only** arguments and
+  no `super().__init__` has an **empty message** (`str(err) == ''`); with a positional
+  message it survives by accident (`BaseException` stores positional arguments).
+  Adjents errors use keyword arguments (`LLMRefusalError(model=..., category=...)`), so
+  a refusal would show up in the logs as an exception without a message.
+
+**D2 — What is `@property` for in `anthropic_client.py`?** It turns a method into a
+**read-only attribute**: `client.model` (no parentheses) calls the method; with no
+setter, `client.model = "..."` raises `AttributeError`. Why not a public `self.model`:
+rule 4 — only the router chooses the model. A public attribute would let any caller
+redirect every following request to another model, bypassing the router; the property
+exposes the model for reading (smoke scripts print it, router tests check it) but not
+for writing. `_model` remains technically writable (Python has no real private), but
+the `_` marks it as off-limits.
+
+**D3 — Q7: pros and cons of (a) and (b)?** Two checked facts weigh in: (1) agent
+context does not reach the LLM through templating today but through a **message**
+(`team_setup.py:254`, `_build_agent_context_message`); `agent/intro.md` is a fixed
+system prompt; (2) `string.Template` works on all 8 prompts (no `$`, JSON braces kept);
+`substitute()` raises `KeyError` on a missing variable, `safe_substitute()` leaves
+`$agent_name` in place silently. So (b) is neither complex nor long (~10 lines with
+tests).
+
+| | (a) Remove `render()` | (b) `string.Template` | (d) Documented status quo |
+| --- | --- | --- | --- |
+| In 4.7 | Remove the method and its 2 tests; §9 describes the actual pattern (fixed system prompt + context message); Technical debt entry: templating, if needed, decided with the agent loop (`string.Template` as candidate) | Replace `format_map` with `Template.substitute`; tests on a real prompt and a missing variable; §9 with `$var` syntax | Docstring warning (4.4), §9 fixed, Technical debt entry |
+| Pros | No trap left; the code says what is actually done; (b) can be added later in a few lines | The trap becomes a usable tool, ready for the agent loop | No code change |
+| Cons | If the agent loop wants templating, ~10 lines to write then | Builds an API **without consumer** before knowing whether the agent loop wants it; a 2nd way of injecting context while the project already uses a message | A known trap stays; a future caller can use `render()` without reading the warning |
+
+(a) over (b) is not about cost: it is not yet known whether templating is useful. The
+"fixed system prompt + context message" pattern also helps prompt caching (step 10):
+the cache matches an exact prefix that includes the system prompt, so a system prompt
+identical for every agent is cached once, while a per-agent templated one gives each
+agent a different prefix. (a) over (d): dead code that fails on first use is worse than
+no code; a docstring warning protects less than an absent method.
+
+**D4 — Q8: pros and cons of typing the SDK call now (4.7) or in step 10.2?** The issue:
+`complete()` builds `kwargs: dict[str, Any]` then calls `stream(**kwargs)`; with `Any`,
+mypy checks nothing. Checked: a typed call makes mypy reject `"summarised"` or
+`"meduim"`, which the current code would send to the API. Option (a) sketch, checked
+with `mypy --strict` (no error):
+
+```python
+def _to_message_params(messages: list[dict[str, str]]) -> list[MessageParam]:
+    params: list[MessageParam] = []
+    for turn in messages:
+        role, content = turn["role"], turn["content"]
+        if role == "user":
+            params.append({"role": "user", "content": content})
+        elif role == "assistant":
+            params.append({"role": "assistant", "content": content})
+        else:
+            raise ValueError(f"Unsupported message role {role!r}.")
+    return params
+
+async with self._client.messages.stream(
+    model=self._model,
+    messages=_to_message_params(messages),
+    max_tokens=max_tokens,
+    thinking={"type": "adaptive", "display": "summarized"},
+    output_config={"effort": effort},
+    system=system if system is not None else omit,  # omit = do not send the key
+) as stream:
+    ...
+```
+
+Callers only use the `user` (19) and `assistant` (14) roles.
+
+| | (a) In 4.7 | (b) In 10.2 |
+| --- | --- | --- |
+| Work | Typed call + `_to_message_params` (~15 lines) + tests (unknown role rejected) | Nothing now; in 10.2, `LLMClient` protocol + neutral message type designed for 3 providers, then a typed call in each client |
+| Pros | mypy protects the only (paid) call path now; a misspelled role is rejected locally; **protects step 4b**, which adds `output_config.format` to this call; the conversion survives 10.2, where only its input type changes | No client change during a walkthrough step; the neutral message type is designed once, with OpenAI / Gemini in view |
+| Cons | A small part is reworked in 10.2 (input type); touches the only LLM path | No protection until step 10 — after 4b, 5, 6, 7, 8, 9, which all touch these calls (structured outputs, prompt audits); a parameter typo is only seen at a paid smoke test |
+| Risk | Contained if **F37 is done first**: transport-level tests check the JSON body actually sent, before and after the change | A wrong parameter reaches the API silently |
+
+### Findings — block 4.3
+
+Severity: 🟠 medium · 🟢 low. No active bug.
+
+| # | File:line | Category | Sev. | Finding → recommendation | Step |
+| --- | --- | --- | :-: | --- | --- |
+| F32 | `prompts/loader.py:39-40` | Trap / deviation from §9 | 🟠 | `render()` raises `KeyError` on `org_generation`, `extract_agent_adjustments`, `interview` (JSON braces, checked); unused in production; §9 presents it as the way to inject variables → remove it and its 2 tests (Q7 a); templating, if needed, decided with the agent loop | 4.7 |
+| F33 | `prompts/loader.py:10-31` | Robustness | 🟢 | CRLF or unterminated frontmatter → frontmatter sent **inside the system prompt**, silently; `true` / `-3` / `1.5` stay strings (checked) → normalize line endings, raise on unterminated frontmatter, tests | 4.7 |
+| F34 | `test_prompts_loader.py:19-24,40-51` | Weak test | 🟢 | `load_all` tests do not read the cache; assertion tied to `model_hint`'s real content; everything depends on the real prompts → `tmp_path` files + parser tests (F33) | 4.7 |
+| F35 | ARCH §9 l.903-915 | Docs | 🟢 | `loader.render(...)` does not exist; the constructor takes a `Path`; `load_all()` not called "at server startup" → rewrite §9 "How prompts are loaded": fixed system prompts + context in a message, no templating today (Q7) | 4.7 |
+| F36 | `llm/anthropic_client.py:84-93` | Typing | 🟠 | `kwargs: dict[str, Any]` hides the SDK types (a typed call catches `"summarised"` / `"meduim"`, checked); `list[dict[str, str]]` is not compatible with `MessageParam` → typed call with `omit` + `_to_message_params` rejecting unknown roles (Q8 a), **after F37** | 4.7 |
+| F37 | `test_llm_anthropic.py:53-77` | Missing test | 🟠 | Everything is mocked above the SDK: a rejected parameter or a stream-parsing change is only seen at a paid smoke test → 2-3 tests through `httpx2.MockTransport` (success, refusal, mid-stream error); feasibility checked | 4.7 |
+| F38 | SDK `_streaming.py:228`, `_client.py:566` | Input for step 10 | 🟠 | A mid-stream overload → `APIStatusError(status_code=200)`, no retry; an initial 529 → `OverloadedError` after 3 requests (checked) → the HTTP error mapping of 10.1 must classify on `body["error"]["type"]`, not on the HTTP status | 10.1 |
+| F39 | `router/router.py:32-33`, `anthropic_client.py:49` | Debt | 🟢 | 2 `AsyncAnthropic` per router, never closed → the FastAPI app builds one router and closes its clients on shutdown (lifespan) | tech debt |
+| F40 | `test_router.py:9-17,36-42` | Weak test | 🟢 | "Direct key over environment" priority not checked; `router is not None` tautological → patch `AnthropicClient` and assert the `api_key` it receives | 4.7 |
+| F41 | `router.py:22-26`, `loader.py` | Docstrings | 🟢 | No docstring on `LLMRouter`, `LLMConfigError` (key resolution order), `PromptLoader`, `LoadedPrompt`, `_parse_frontmatter`; `loader.py` module docstring not per the convention. Corrects plan 4.4, which only planned a review of `router.py` | 4.4 |
+| F42 | `anthropic_client.py:33-35` | Security (data) | 🟢 | Thinking summaries are logged as soon as `adjents` or the root logger is at DEBUG (checked) → the app's logging configuration sets `adjents.llm.thinking` explicitly | tech debt |
+
+Out of scope, recorded for other steps:
+
+- 3 stub prompts of 7 lines (`agent/think_and_act`, `agent/memory_summary`,
+  `coo/daily_planning`), used by nothing → agent loop (already planned by §9's table).
+
+### Decisions — block 4.3 (2026-10-23)
+
+- **Q7 — `render()`**: option (a), removed in **4.7** with its 2 tests; ARCH §9
+  rewritten to describe the actual pattern (fixed system prompt + agent context in a
+  message); Technical debt entry: templating, if ever needed, decided with the agent
+  loop (`string.Template` as candidate). Rejected: (b) `string.Template` now (API
+  without consumer); (c) escaping braces as `{{ }}` (makes hand-edited prompts
+  fragile); (d) documented status quo (keeps a trap).
+- **Q8 — typed SDK call**: option (a), in **4.7**, **after F37** (transport-level tests
+  first, so the change is checked against the real SDK): typed `stream(...)` call with
+  `omit`, `_to_message_params` rejecting unknown roles; step 10.2 only changes the
+  conversion's input type. Rejected: (b) wait for 10.2 (no protection during 4b, 6, 7,
+  8).
+- F32–F42 routed to the target steps listed above.

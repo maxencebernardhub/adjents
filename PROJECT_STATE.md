@@ -786,12 +786,14 @@ branch deleted, CI green on main. Next: step 4.
 
 ---
 
-## Last session — 2026-10-23 (step 4, part 1 — in progress)
+## Last session — 2026-10-23 (step 4, part 1 — complete)
 
 Step 4 — walkthrough of the foundations (branch `refactor/walkthrough-foundations`).
 Part 1 = setup + commented reading 4.1 → 4.3 (no code change); part 2 = 4.4 → 4.7.
 Full notes (explanations, Q&A, findings, decisions) in
-`docs/walkthroughs/step-4-foundations.md`.
+`docs/walkthroughs/step-4-foundations.md`. Every library / SDK behavior stated was
+checked by running code against the installed versions (Pydantic, SQLAlchemy,
+SQLModel, aiosqlite, pytest-asyncio, `anthropic` 2.1.0 sources), not from memory.
 
 ### Done (2026-10-23)
 
@@ -806,8 +808,31 @@ Full notes (explanations, Q&A, findings, decisions) in
   `engine.py` has no caller yet, but its relative DB path (F13), the missing engine
   tests (F14) and `expire_on_commit=True` (F15) break as soon as the FastAPI app uses
   it; decisions Q4–Q6 (see Decisions log, 2026-10-23).
+- 4.3: prompts, LLM client and router walked through (`claude-api` skill loaded, SDK
+  sources read). 11 findings (F32–F42), no active bug; the client conforms to ADR 0012
+  and ADR 0007 (amended). Notable: `PromptLoader.render()` fails on 3 of the 5
+  production prompts (F32); the client tests mock the whole SDK (F37); a mid-stream
+  overload surfaces as `APIStatusError(status_code=200)` without retry (F38, input
+  for step 10); decisions Q7–Q8 (see Decisions log, 2026-10-23).
 
-**Stopped at:** 4.2 complete — next: 4.3 (prompts, LLM client, router).
+### Findings consolidated (part 1)
+
+42 findings, no active bug; F13–F15 become bugs as soon as the FastAPI app uses
+`db/engine.py`. Routing (details and severities in the walkthrough file):
+
+| Target | Findings |
+| --- | --- |
+| 4.4 (docstrings) | F8, F11, F41 |
+| 4.7 (fixes, TDD) | F1, F2, F3, F4, F5, F7, F9, F12, F13, F14, F15, F17, F18, F19, F21, F23, F25, F26, F27 (decorators), F32, F33, F34, F35, F36, F37, F40; F10 accepted as is |
+| 5.1b | F22 (schema migration strategy, ADR) |
+| 6.2 | note on F30 (same code, out of scope) |
+| 7.2 / 8.3 | F3 (callers rewired) |
+| 8.2 | direct `setattr` writes routed through `AgentSpec` (4.1 out of scope) |
+| 8.3 | F20, F24, F27 (fixtures move), F28, F31 |
+| 10.1 | F38 |
+| Technical debt | F6, F16, F29, F30, F39, F42; `Message` sentinels; `Deliverable.file_path`; templating (Q7); `make dev` / `api.main` |
+
+**Stopped at:** 4.3 complete — step 4 part 1 done. Next: 4.4 (docstrings + comments).
 
 ---
 
@@ -929,14 +954,18 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   `deliverables/`, `generator/models.py`) + their tests — findings F1–F12
 - [x] 4.2 Walkthrough: `db/` (`tables.py`, `convert.py`, `engine.py`) + tests —
   findings F13–F31
-- [ ] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
+- [x] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
   `llm/types.py`, `llm/errors.py`, `router/router.py` + tests (incl.
-  `test_llm_errors.py`)
-- [ ] 4.4 Docstrings + comments (`anthropic_client.py`, `types.py`, `errors.py` and
-  `router.py` already have full docstrings from step 3: review only). From the
-  walkthrough: class docstrings for the 6 model modules and module docstrings per the
-  convention — purpose, place in the flow, entry points, related ADRs (F8);
-  `test_models_agents.py` module docstring lists `BlockingQuestion` (F11)
+  `test_llm_errors.py`) — findings F32–F42
+- [ ] 4.4 Docstrings + comments (`anthropic_client.py`, `types.py` and `errors.py`
+  already have full docstrings from step 3: review only). From the walkthrough: class
+  docstrings for the 6 model modules and module docstrings per the convention —
+  purpose, place in the flow, entry points, related ADRs (F8);
+  `test_models_agents.py` module docstring lists `BlockingQuestion` (F11);
+  `router.py` — docstrings for `LLMRouter` and `LLMConfigError` (API key resolution
+  order: direct argument, then `ANTHROPIC_API_KEY`); `prompts/loader.py` — module
+  docstring per the convention, docstrings for `PromptLoader`, `LoadedPrompt`,
+  `_parse_frontmatter` (F41)
 - [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004, and for the LLM layer
   against ADR 0007 (amended), ADR 0012 and ARCHITECTURE §2 / §8
 - [ ] 4.6 Code review
@@ -979,6 +1008,23 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     JSON and an unknown enum value in a row
   - F27: one fixture decorator style in `conftest.py` (team setup fixtures move in
     8.3)
+  - F32 (Q7): remove `LoadedPrompt.render()` and its 2 tests (fails on the prompts'
+    own JSON braces; unused in production)
+  - F33: frontmatter parser — normalize line endings, raise on an unterminated
+    frontmatter block, tests
+  - F34: loader tests on `tmp_path` files (parser cases from F33); `load_all` tests
+    read the cache; no assertion on a real prompt's `model_hint`
+  - F35 (Q7): ARCHITECTURE §9 "How prompts are loaded" rewritten — fixed system
+    prompts + agent context in a message, no templating today, `PromptLoader(Path)`,
+    `load_all()` not called at startup yet
+  - F37: 2-3 `AnthropicClient` tests through `httpx2.MockTransport` with the real SDK
+    (success with the JSON body actually sent, refusal, mid-stream error event) —
+    **before F36**
+  - F36 (Q8): typed `messages.stream(...)` call (no `dict[str, Any]`), `omit` for
+    `system`, `_to_message_params()` converting the neutral messages to
+    `MessageParam` and rejecting unknown roles, tests
+  - F40: router tests check the `api_key` passed to `AnthropicClient` (direct key
+    over environment, environment key used)
 
 ### Step 4b — Structured outputs
 
@@ -992,7 +1038,9 @@ Branch: `feat/structured-outputs` — before steps 6, 7, 8, which adopt it
   unsupported ones (checked in its sources)
 - [ ] 4b.2 **Amend** ADR 0012 (the neutral contract gains a method)
 - [ ] 4b.3 TDD: Anthropic implementation (`output_config.format` /
-  `messages.parse()`), same `stop_reason` handling and typed errors as `complete()`
+  `messages.parse()`), same `stop_reason` handling and typed errors as `complete()`;
+  same typed SDK call (no `dict[str, Any]`) and transport-level tests as `complete()`
+  after step 4.7 (F36, F37)
 - [ ] 4b.4 Docs (ARCHITECTURE §2) + code review, fixes. Callers adopt it in 6.3, 7.3
   and 8.5b
 
@@ -1140,7 +1188,12 @@ Branch: `feat/llm-router` — full `/feature` workflow
     table; the per-role `get_*_client()` methods become request-based routing
   - Map each provider's effort control, refusal / truncation signals and HTTP errors
     to the neutral contract (`Effort`, `LLMResponseError` family, ADR 0012);
-    sampling parameters (e.g. temperature) for non-Anthropic providers
+    sampling parameters (e.g. temperature) for non-Anthropic providers. Anthropic:
+    an error event in the middle of a stream (e.g. `overloaded_error` after a 200)
+    surfaces as a generic `APIStatusError` with `status_code == 200` and is not
+    retried by the SDK, while the same error on the initial response is an
+    `OverloadedError` retried twice — classify on `body["error"]["type"]`, not on the
+    HTTP status (step 4.3 walkthrough, F38, checked against `anthropic` 2.1.0)
   - Fallback policy, two distinct cases: refusal fallback (Anthropic server-side
     `fallbacks`, beta `server-side-fallback-2026-07-01`, `"default"` mode, Claude API
     only, refusals only — vs cross-provider fallback via the router) and availability
@@ -1238,6 +1291,17 @@ Branch: `feat/llm-router` — full `/feature` workflow
   (walkthrough F28)
 - `make dev` starts `adjents.api.main:app`, which does not exist yet: the backend half
   of `make dev` fails today → **FastAPI app** feature
+- `LLMRouter` builds 2 `AsyncAnthropic` clients (2 connection pools) and nothing ever
+  closes them → the app builds one router and closes its clients on shutdown
+  (lifespan) → **FastAPI app** feature (walkthrough F39)
+- Thinking summaries (user business data) are logged as soon as the `adjents` or root
+  logger is at DEBUG, not only when `adjents.llm.thinking` is enabled on purpose
+  (checked) → the app's logging configuration sets `adjents.llm.thinking` explicitly
+  → **FastAPI app** feature (walkthrough F42, ADR 0012 §6)
+- No prompt templating once `render()` is removed (step 4.7, Q7): agent context
+  reaches the LLM in a message (`_build_agent_context_message`), system prompts are
+  fixed. If a prompt ever needs variables, decide the mechanism (`string.Template`
+  as candidate — works on every current prompt, checked) → **agent loop** design
 
 ---
 
@@ -1298,3 +1362,5 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-23 | Foreign keys + `PRAGMA foreign_keys=ON` postponed to Technical debt, decided with the FastAPI app / agent loop | No orphan is possible today outside a bug (sequential writers, only skills are deleted); enabling them also requires sorting agents by level before insert in org generation — a behavior change that does not belong in a walkthrough |
 | 2026-10-23 | `db/convert.py` split into a `db/convert/` package per domain in step 4.7 (option b) | Explicit, `mypy --strict`-friendly mapping kept; files well under 300 lines; `Task` (step 5) gets its own module. Rejected: documented exception (a), generic field-list-driven converter (c: less code, but hard to type) |
 | 2026-10-23 | Schema migration strategy decided in step 5.1b with an ADR, before the first column change (5.4); ARCHITECTURE §1 "migrations (via SQLModel)" removed in step 4.7 | `create_all` only creates missing tables, so an existing `adjents.db` fails with "no such column" after a column is added (checked); no database exists on disk yet, so nothing breaks before step 5 |
+| 2026-10-23 | `LoadedPrompt.render()` removed in step 4.7; system prompts stay fixed and agent context goes in a message; templating, if ever needed, decided with the agent loop | `render()` fails on the prompts' own JSON braces (3 of 5 production prompts) and has no caller; the context-message pattern already exists and keeps one shared system-prompt prefix for prompt caching. Rejected: `string.Template` now (API without consumer), escaping braces (fragile hand-edited prompts), documented status quo (keeps a trap) |
+| 2026-10-23 | `AnthropicClient` calls the SDK with typed arguments (no `dict[str, Any]`) and converts the neutral messages to `MessageParam`, in step 4.7 after transport-level tests (not deferred to step 10.2) | mypy then rejects a misspelled parameter value before a paid call; protects steps 4b, 6, 7, 8, which touch these calls; step 10.2 only changes the conversion's input type |
