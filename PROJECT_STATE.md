@@ -13,8 +13,8 @@ the Next steps plan below.
 | Feature | Feature Brief | Implementation Plan | TDD (tests → code) | Smoke Test | Spec Review | Code Review | Merged |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | Project scaffold | n/a | n/a | n/a | n/a | n/a | n/a | ✅ |
-| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | n/a | n/a | ✅ | n/a | ⚠️ (4.7) | — (step 4) | ✅ |
-| Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | ⚠️ (4.7) | — (step 4) | ✅ |
+| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | n/a | n/a | ✅ | n/a | ⚠️ (4.7) | ⚠️ (4.7) | ✅ |
+| Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | ⚠️ (4.7) | ⚠️ (4.7) | ✅ |
 | Generator Agent — interview | ✅ | ✅ | ✅ | ✅ | — (step 6) | ✅ ¹ | ✅ |
 | Generator Agent — org generation | ✅ | ✅ | ✅ | ✅ | — (step 7) | ✅ ¹ | ✅ |
 | Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (step 8) | ✅ |
@@ -917,6 +917,53 @@ method, findings and decisions in `docs/walkthroughs/step-4-foundations.md`, sec
 
 ---
 
+## Last session — 2026-10-29 (step 4, part 2 — 4.6)
+
+Step 4.6 — code review of the foundations (branch `refactor/walkthrough-foundations`).
+No code change. Report: `docs/reviews/2026-10-29-foundations-code-review.md`; method,
+findings and decisions in `docs/walkthroughs/step-4-foundations.md`, section
+"4.6 — Code review".
+
+### Done (2026-10-29, 4.6)
+
+- `code-reviewer` subagent run once, read-only, report in English: full content of the
+  14 foundation modules and their tests (not the branch diff); F1–F59 and decisions
+  Q1–Q8 / 4.4 / 4.5 given as known; findings on code that 4.7 rewrites reported
+  separately, tied to the planned fix.
+- Verdict ✅ approved with minor fixes: 13 new findings (3 🟠, 10 🟢), no 🔴, no
+  active bug. Every finding verified in the main session (code read, grep, probes;
+  `claude-api` skill loaded and `anthropic` 2.1.0 sources read for `llm/`): 13
+  confirmed; the one disagreement (4.3 note on `MagicMock` and `async with`) partly
+  confirmed and corrected in the walkthrough.
+- Milestone table: "Code Review" ⚠️ (4.7) for the models and database rows.
+
+### New findings (4.6) and routing
+
+| # | Finding | Target |
+| --- | --- | --- |
+| F60 | API key with surrounding whitespace accepted; leaks in clear text through the exception chain (🟠) | 4.7, with F40 |
+| F61 | `metadata: dict[str, Any]`: `datetime` / `UUID` / `set` crash `to_table`, tuples become lists, `NaN` stored as invalid JSON | 4.7, with F9 |
+| F62 | `ValidationError` text holds user business data (input values) | 4.7; `InterviewError` message: 6.3 |
+| F63 | `PromptLoader.get()` resolves `..` and absolute keys outside the prompts directory | 4.7, with F33 / F34 |
+| F64 | The 3 LLM errors cannot be pickled / deep-copied | Technical debt |
+| F65 | Effort tests parametrized as `str` + ignore; a test name promises a prefill check | 4.7, with F2 |
+| F66 | `expire_on_commit=False` turns the DB roundtrip reads into identity-map reads (🟠) | 4.7, with F15 / F14 / F26 |
+| F67 | `DATABASE_URL=` and `sqlite://` fail at import | 4.7, with F14 / F59 |
+| F68 | DB directory creation must skip in-memory URLs | 4.7, with F13 |
+| F69 | File engine: second writer fails after 5 s (`journal_mode=delete`, `busy_timeout=5000`) (🟠) | Technical debt, merged with Q4 / F16 |
+| F70 | Parser: UTF-8 BOM, unterminated block closed by a `---` rule, lone `"` | 4.7, with F33 / F44 / F58 |
+| F71 | Key passed to the SDK never asserted; SDK reads `ANTHROPIC_BASE_URL` / `ANTHROPIC_CUSTOM_HEADERS` | 4.7, with F37 |
+| F72 | `work_hours`: ranges unchecked, overnight undefined, `BusinessContext` unconstrained | 4.7, with Q1 / F3 (Q1 scope extended) |
+
+Out of scope: `interview.py` (`InterviewError` embeds `str(ValidationError)`;
+non-object extraction JSON raises `TypeError` / `AttributeError`) → 6.3; smoke scripts
+without a transport-error handler → 8.6.
+
+**Stopped at:** 4.6 complete. Next: 4.7 (review findings together, fix with TDD —
+F60 and F66 first).
+
+---
+
 ## Next steps
 
 Each step follows the same cycle unless stated otherwise: create the branch from an
@@ -1051,7 +1098,8 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
 - [x] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004, and for the LLM layer
   against ADR 0007 (amended), ADR 0012 and ARCHITECTURE §2 / §8 — done 2026-10-29,
   findings F48–F59 (`docs/reviews/2026-10-29-foundations-spec-compliance.md`)
-- [ ] 4.6 Code review
+- [x] 4.6 Code review — done 2026-10-29, findings F60–F72
+  (`docs/reviews/2026-10-29-foundations-code-review.md`)
 - For 4.5 and 4.6, the subagent prompt points to
   `docs/walkthroughs/step-4-foundations.md` and states: findings F1–F59 (F48–F59 from
   the 4.5 spec review, also in its report) are already known and routed — do not
@@ -1068,24 +1116,40 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F2 (Q2): `mypy --strict adjents/ tests/` in Makefile + CI; all 53 test errors
     fixed, including the tests of steps 7 and 8
   - F3 (Q1): `AgentSpec` invariants in the model (`Field` constraints / validators)
-    and reference constants in `agents/models.py`; callers rewired in 7.2 / 8.3
+    and reference constants in `agents/models.py`; callers rewired in 7.2 / 8.3.
+    F72 (Q1 scope extended): one shared `WorkHours` type with range checks (not a
+    format-only pattern), used by `AgentSpec` and `BusinessContext`; an end before
+    the start is accepted and documented as a window crossing midnight; boundary
+    tests
   - F4: `AwareDatetime` for every `datetime` field
   - F5: `BlockingQuestion` consistency `@model_validator` (ADR 0004 schema kept)
   - F7: `BusinessContext` added to ARCHITECTURE §3 and to its serialization table
     (6 list fields — confirmed in 4.2)
-  - F9: tests for the "required but nullable" contract and a JSON-mode roundtrip
+  - F9: tests for the "required but nullable" contract and a JSON-mode roundtrip.
+    F61: `Message.metadata` / `Memory.metadata` typed `dict[str, JsonValue]`, and
+    `allow_nan=False` in the two `json.dumps` calls (`JsonValue` accepts NaN); tests
+    (datetime / tuple → `ValidationError`, NaN rejected)
   - F12: error tests with one missing field each + assertion on `errors()` locations
   - F10: tautological tests accepted as is (no action)
   - F13: DB path anchored on the repository root (`data/adjents.db`, ARCHITECTURE
     §1) instead of the working directory; `create_db_and_tables` creates the
-    directory; test
+    directory; test. F68: directory creation skips in-memory URLs
+    (`make_url().database` is `None`, `":memory:"` or a `file:` URI); tests with
+    `:memory:` and `tmp_path / "sub" / "a.db"`
   - F14: engine and session factories in `db/engine.py` (no engine created at
     import), used by `conftest.py`; new `test_db_engine.py` (`_async_url`,
-    `create_db_and_tables`, `get_session`)
+    `create_db_and_tables`, `get_session`). F67: `os.getenv(...) or default` (an
+    empty `DATABASE_URL` fails at import today) and a rewrite based on
+    `make_url().drivername` (handles `sqlite://`); tests for `""`, `sqlite://`
   - F46 (with F14): `engine.py` imports `adjents.db.tables` (`# noqa: F401`) so
     `create_db_and_tables` always registers the 12 tables; test in a fresh process
   - F15: `expire_on_commit=False` in the shared session factory + test (attribute
-    read after commit raises `MissingGreenlet` today)
+    read after commit raises `MissingGreenlet` today). **F66 (🟠, first)**: once
+    `conftest` uses that factory, `session.get()` after commit returns the
+    identity-map object without any `SELECT`, so the 33 DB roundtrip reads would no
+    longer read SQLite — read back in a fresh session (or `expunge_all()`) and add a
+    guard test (row corrupted in raw SQL → `*_from_table` raises; also F26's
+    corrupt-JSON case)
   - F17: remove the table defaults that diverge from the domain (`is_paused=False`,
     `"[]"`…) so an omission fails with `NOT NULL` instead of a silent value
   - F18: schema drift test (ADR 0002): domain fields == table columns, parametrized,
@@ -1105,24 +1169,35 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F32 (Q7): remove `LoadedPrompt.render()` and its 2 tests (fails on the prompts'
     own JSON braces; unused in production)
   - F33: frontmatter parser — normalize line endings, raise on an unterminated
-    frontmatter block, tests
+    frontmatter block, tests. F70: strip a UTF-8 BOM (`utf-8-sig`); reject any
+    non-blank line inside the block that is not `key: value` (an unterminated block
+    closed by a `---` rule in the body is not caught otherwise); a quoted value
+    needs at least 2 characters; one `tmp_path` test per case
   - F44 (with F33): a value accepted by `isdigit()` but rejected by `int()` (`²`) no
     longer raises an uncaught `ValueError`; test
   - F47 (with F33 / F34): `load_all()` keys built with `as_posix()` (OS-independent
     separator); test
   - F34: loader tests on `tmp_path` files (parser cases from F33); `load_all` tests
-    read the cache; no assertion on a real prompt's `model_hint`
+    read the cache; no assertion on a real prompt's `model_hint`. F63: `get()`
+    rejects keys resolving outside the prompts directory (`..`, absolute) with an
+    `is_relative_to` check; `tmp_path` test
   - F35 (Q7): ARCHITECTURE §9 "How prompts are loaded" rewritten — fixed system
     prompts + agent context in a message, no templating today, `PromptLoader(Path)`,
     `load_all()` not called at startup yet
   - F37: 2-3 `AnthropicClient` tests through `httpx2.MockTransport` with the real SDK
     (success with the JSON body actually sent, refusal, mid-stream error event) —
-    **before F36**
+    **before F36**. F71: assert the `Authorization: Bearer` header carries the key,
+    and `monkeypatch.delenv` `ANTHROPIC_BASE_URL` / `ANTHROPIC_CUSTOM_HEADERS` (read
+    by the SDK even with an explicit key)
   - F36 (Q8): typed `messages.stream(...)` call (no `dict[str, Any]`), `omit` for
     `system`, `_to_message_params()` converting the neutral messages to
     `MessageParam` and rejecting unknown roles, tests
   - F40: router tests check the `api_key` passed to `AnthropicClient` (direct key
-    over environment, environment key used)
+    over environment, environment key used). **F60 (🟠, first)**: the router
+    `strip()`s the key and raises `LLMConfigError` (naming no value) when it is
+    empty or contains whitespace / control characters — today such a key leaks in
+    clear text through the exception chain; tests (`"sk-x\n"` → stripped,
+    `"  "` direct or from the environment → `LLMConfigError`)
 
   From the 4.5 spec review (`docs/reviews/2026-10-29-foundations-spec-compliance.md`):
   - F49 (with F35, Q7 scope extended): ARCHITECTURE §3 "rendered with the agent's
@@ -1144,6 +1219,15 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     (empty frontmatter block)
   - F59 (with F14): `_async_url` — remove the redundant `"aiosqlite" not in raw`
     clause; test with a path containing "aiosqlite"
+
+  From the 4.6 code review (`docs/reviews/2026-10-29-foundations-code-review.md`);
+  F60, F61, F63, F66, F67, F68, F70, F71, F72 are folded into the items above:
+  - F62: `hide_input_in_errors=True` on the models carrying user content
+    (`BusinessContext`, `Message`, `Memory`, `AgentSpec`, `BlockingQuestion`); test
+    that `str(exc)` holds no input value (the `InterviewError` message: step 6.3)
+  - F65 (with F2): effort tests parametrized with `get_args(Effort)` and typed
+    `Effort` (the `# type: ignore` goes); rename
+    `test_complete_sends_no_sampling_prefill_or_tool_parameters` (no prefill check)
 
 ### Step 4b — Structured outputs
 
@@ -1214,7 +1298,12 @@ Branch: `refactor/walkthrough-interview`
   `/claude-api prompt-audit`); adopt structured outputs (step 4b) for interview turns
   and `BusinessContext` extraction; unknown keys in the extraction JSON are dropped
   silently (`BusinessContext(**data)` with Pydantic's default `extra="ignore"`) —
-  decide: forbid, log, or accept (step 4.1 walkthrough)
+  decide: forbid, log, or accept (step 4.1 walkthrough). From the step 4.6 code
+  review: the `InterviewError` raised on a `ValidationError` embeds `str(exc)`, i.e.
+  LLM-extracted business data (`interview.py:226-229`, F62 — counters, never content);
+  a non-object extraction JSON (`[]`, `"text"`) raises `TypeError` / `AttributeError`
+  on `data.pop` instead of `InterviewError` (`interview.py:211-218`, checked;
+  probably moot with structured outputs)
 - [ ] 6.4 Docstrings + comments
 - [ ] 6.5 Spec review (against the 2026-05-20 Feature Brief; LLM calls against ADR
   0012) + code review, fixes
@@ -1280,7 +1369,10 @@ Branch: `refactor/walkthrough-team-setup`
   `extract_agent_adjustments.md` (written for Sonnet 4.6 — e.g.
   `/claude-api prompt-audit`)
 - [ ] 8.6 Smoke scripts: move the duplicated helpers (`_hr`, `_load_env`, DB setup…)
-  into `scripts/_common.py` (created in step 3); `smoke_team_setup.py` is 635 lines
+  into `scripts/_common.py` (created in step 3); `smoke_team_setup.py` is 635 lines.
+  Add a shared handler for SDK transport errors (`anthropic.APIConnectionError`,
+  `APIStatusError`) printing a short diagnostic instead of the full traceback, which
+  can hold the API key (step 4.6 code review, F60)
 - [ ] 8.7 Docstrings + comments
 - [ ] 8.8 New code review on the result (LLM calls against ADR 0012), fixes
 
@@ -1404,7 +1496,12 @@ Branch: `feat/llm-router` — full `/feature` workflow
   self-referencing `parent_id` fails otherwise — checked), tests. JSON-list references
   (`skill_ids`, `message_ids`…) would need association tables → decided with the
   **FastAPI app / agent loop** (agent deletion, concurrent writers) (walkthrough F16,
-  step 4.2 Q4)
+  step 4.2 Q4). The same `connect` listener also sets the journal mode (WAL) and an
+  explicit `busy_timeout`: with today's file-engine defaults (`journal_mode=delete`,
+  `busy_timeout=5000`) a second writer fails with "database is locked" after 5 s
+  (checked); test with two sessions on a `tmp_path` file DB. Also decide whether
+  orchestrators may hold a write transaction across an LLM `await` (step 4.6 code
+  review, F69)
 - `MemoryTable` (`memories`) is used by nothing and appears in neither ARCHITECTURE §3
   nor §7 (memory lives in Chroma): SQLite source of truth with Chroma as an index, or a
   dead table → **Memory feature** (walkthrough F29)
@@ -1445,6 +1542,12 @@ Branch: `feat/llm-router` — full `/feature` workflow
   the app calls `load_all()` once at startup (lifespan), so runtime `get()` only hits
   the cache; no async conversion → **FastAPI app** feature (step 4.5 spec review,
   F50)
+- `LLMResponseError`, `LLMRefusalError`, `LLMTruncatedError` cannot be pickled or
+  deep-copied (keyword-only constructors; `BaseException.__reduce__` rebuilds from
+  `args` → `TypeError`, checked): a process boundary would turn a refusal into
+  another error. No such boundary today → add `__reduce__` + a pickle roundtrip test
+  per class at the first one (e.g. eval runs, **step 10**) (step 4.6 code review,
+  F64)
 
 ---
 
@@ -1511,3 +1614,6 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-29 | Model fields documented in a Google `Attributes:` section, inline field comments moved into it (also for steps 6.4, 7.4, 8.7) | IDE hover shows docstrings, not comments; one source avoids drift; same style as `llm/errors.py` |
 | 2026-10-29 | Q7 scope extended (step 4.5, F49): step 4.7 also fixes ARCHITECTURE §3 and amends ADR 0010 ("prompts rendered with the agent's fields" → fixed system prompts + agent context in a message) | Otherwise the same inaccurate statement survives in two places once §9 is rewritten; ADRs are amended, never rewritten |
 | 2026-10-29 | Milestone "Spec Review" set to ⚠️ (4.7) for the models and database rows; the "LLM router" and "LLM clients" rows stay unchanged until those features formally start (step 10), although 4.5 reviewed `router.py` and `anthropic_client.py` | ⚠️ = done with open findings (legend); the LLM rows track features not started yet |
+| 2026-10-29 | Q1 scope extended (step 4.6, F72): one shared `WorkHours` type with range checks for `AgentSpec` and `BusinessContext`; an end before the start = a window crossing midnight, accepted and documented | A format-only pattern accepts `99:99-25:00`; constraining only `AgentSpec` moves an invalid extraction value into paid org generation retries; a solopreneur working late is a legitimate case |
+| 2026-10-29 | WAL + explicit `busy_timeout` merged into the foreign-keys Technical debt entry (Q4), not into the 4.7 engine factory (step 4.6, F69) | One `connect` listener for every SQLite pragma; no file database and no concurrent writer exist before the FastAPI app / agent loop |
+| 2026-10-29 | Pickling the LLM errors left to Technical debt (step 4.6, F64); milestone "Code Review" set to ⚠️ (4.7) for the models and database rows | No process boundary consumes them today (same reasoning as Q7); ⚠️ = done with open findings |

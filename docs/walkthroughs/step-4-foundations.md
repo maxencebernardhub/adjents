@@ -1033,3 +1033,95 @@ bug.
 - Milestone table, "Spec Review" column: ⚠️ (4.7) for "Core Pydantic models" and
   "Database layer". "LLM router" and "LLM clients" unchanged until those features
   formally start (step 10).
+
+---
+
+## 4.6 — Code review
+
+Report: `docs/reviews/2026-10-29-foundations-code-review.md` (subagent report +
+main-session verification).
+
+### Method — 4.6
+
+- `code-reviewer` subagent, one run, read-only (probes in the session scratchpad with
+  `python -B`, `mypy --cache-dir=/dev/null`, `pytest -p no:cacheprovider`; working
+  tree clean afterwards). Report written in English.
+- Full content of the 14 modules and their tests, not the branch diff. Callers of
+  steps 6–8 read only to judge a contract.
+- Checklist: correctness and edge cases, error handling, security, performance,
+  simplification, readability, typing, test quality and coverage — what 4.5 (spec,
+  docstrings) did not cover.
+- F1–F59 and decisions Q1–Q8 / 4.4 / 4.5 given as known. Code that 4.7 removes or
+  restructures reported only when a finding steers the planned fix, in a separate
+  section ("to integrate into Fxx").
+- Every finding then verified in the main session (code read, grep, probes; the
+  `claude-api` skill loaded and the `anthropic` 2.1.0 sources read for `llm/`).
+
+### Result — 4.6
+
+- Verdict ✅ approved with minor fixes: 13 new findings (3 🟠, 10 🟢), all confirmed;
+  no 🔴. 6 are ordinary findings (F60–F65), 7 complete a planned 4.7 fix (F66–F72).
+- The two that matter most: F60, an API key with surrounding whitespace leaks in
+  clear text through the exception chain; F66, the planned `expire_on_commit=False`
+  (F15) would make the 33 DB roundtrip reads hit the identity map instead of SQLite,
+  so those tests could no longer fail.
+- `mypy --strict` clean on the 14 modules; 143 tests green on the 12 in-scope test
+  files.
+
+### Findings — 4.6
+
+Numbering continues from 4.5 (subagent N1–N6 → F60–F65, C1–C7 → F66–F72). No active
+bug: F60 is reachable only through the smoke scripts; F66–F69 concern `db/engine.py`,
+which has no caller yet.
+
+| # | File:line | Category | Sev. | Finding → recommendation | Step |
+| --- | --- | --- | :-: | --- | --- |
+| F60 | `router/router.py:53` | Security | 🟠 | A key with leading / trailing whitespace (or only whitespace) is accepted; the HTTP layer rejects the header and the full key appears in the exception chain under a misleading `APIConnectionError("Connection error.")` (checked) → `strip()`, reject empty / whitespace / control characters with `LLMConfigError`, tests | 4.7 (with F40) |
+| F61 | `messaging/models.py:47`, `memory/models.py:37`, `db/convert.py:165,212` | Correctness / typing | 🟢 | `dict[str, Any]` accepts `datetime` / `UUID` / `set` (→ `TypeError` in `to_table`), tuples (→ lists) and `NaN` (invalid JSON) (checked) → `dict[str, JsonValue]` + `allow_nan=False` (`JsonValue` accepts NaN), tests | 4.7 (with F9) |
+| F62 | all models, notably `generator/models.py:22` | Security (data) | 🟢 | `str(ValidationError)` holds the input value; the interview copies it into `InterviewError` (checked) → `hide_input_in_errors=True` on models carrying user content, test | 4.7; message of `InterviewError`: 6.3 |
+| F63 | `prompts/loader.py:136` | Security (hardening) | 🟢 | `get("../x")` and absolute keys resolve outside the prompts directory (checked; unreachable today) → `is_relative_to` check, `tmp_path` test | 4.7 (with F33 / F34) |
+| F64 | `llm/errors.py:26,42,65` | Correctness | 🟢 | The 3 errors fail `pickle` / `deepcopy` (keyword-only constructors) (checked); no process boundary today | tech debt |
+| F65 | `test_llm_anthropic.py:141-147,161-169` | Test quality / typing | 🟢 | Effort parametrized as `str` + `# type: ignore` instead of `get_args(Effort)`; a test name promises a prefill check it does not make | 4.7 (with F2) |
+| F66 | `conftest.py:29`, `test_db_convert.py`, `test_db_tables.py` | Test quality | 🟠 | With `expire_on_commit=False`, `session.get()` returns the identity-map object without any `SELECT` (checked: stale data accepted) → read back in a fresh session (or `expunge_all()`) + a guard test on a row corrupted in raw SQL | 4.7 (with F15 / F14, F26) |
+| F67 | `db/engine.py:38-44` | Correctness | 🟢 | `DATABASE_URL=` and `sqlite://` fail at import (checked) → `getenv(...) or default`, rewrite on `make_url().drivername`, tests | 4.7 (with F14 / F59) |
+| F68 | `db/engine.py:49-58` | Correctness | 🟢 | `make_url().database` is `None` / `':memory:'` / `'file:…'` for in-memory URLs → directory creation must skip them, tests | 4.7 (with F13) |
+| F69 | `db/engine.py:43` | Correctness / performance | 🟠 | File engine: `journal_mode=delete`, `busy_timeout=5000`; a second writer fails after 5.2 s (checked) → WAL + explicit busy timeout in the `connect` listener planned for foreign keys | tech debt (with Q4 / F16) |
+| F70 | `prompts/loader.py:57-77` | Robustness | 🟢 | UTF-8 BOM ignored; unterminated block closed by a `---` rule in the body (body truncated, a line becomes a key); lone `"` → `""` (checked) → `utf-8-sig`, reject non-`key: value` lines, tests | 4.7 (with F33 / F44 / F58) |
+| F71 | `test_llm_anthropic.py:69-77`; SDK `_client.py:241,250,374-378` | Test coverage | 🟢 | Key passed to the SDK never asserted; the SDK sends `Authorization: Bearer` and reads `ANTHROPIC_BASE_URL` / `ANTHROPIC_CUSTOM_HEADERS` from the environment → assert the header, `delenv` both in the transport tests | 4.7 (with F37, completes F40) |
+| F72 | `agents/models.py:110`, `generator/models.py:72`, `org_generation.md:100` | Correctness | 🟢 | A format-only `work_hours` pattern accepts `99:99-25:00` and an undefined `22:00-02:00`; the business-context value is copied into every agent → shared `WorkHours` type with range checks for both models, overnight windows accepted and documented | 4.7 (with Q1 / F3) |
+
+Out of scope, recorded for other steps:
+
+- `interview.py:226-229` embeds `str(ValidationError)` in `InterviewError` (F62's
+  leak path); `interview.py:211-218` raises `TypeError` / `AttributeError` instead of
+  `InterviewError` on a non-object extraction JSON (checked) → step 6.3.
+- Smoke scripts have no handler for SDK transport errors: the full traceback is
+  printed (F60's path to the terminal) → step 8.6 (`_common.py`).
+
+### Corrections to earlier statements — 4.6
+
+1. 4.3, idioms table, `_FakeStream` row: "a plain `MagicMock` cannot be used with
+   `async with`" is false — since Python 3.8 `MagicMock` supports the async context
+   manager protocol (`async with MagicMock() as m` yields an `AsyncMock`, checked).
+   The real reason for `_FakeStream`: the mock's `get_final_message()` is awaitable
+   but returns a `MagicMock`, not an SDK `Message`, so `_extract_text` would raise
+   `LLMResponseError`; `_FakeStream` returns a real `Message`. The subagent's own
+   explanation ("not awaitable") was also inaccurate (checked).
+
+### Decisions — 4.6 (2026-10-29)
+
+- F60–F72 routed as listed above. The "to integrate" findings get their own numbers
+  (F66–F72), each tied to the planned fix it completes, so 4.7 and its tests can cite
+  them.
+- **F64** → Technical debt (fix at the first process boundary, e.g. evals in step 10):
+  no consumer today, same reasoning as Q7.
+- **F69** → merged into the foreign-keys Technical debt entry (Q4 / F16): one
+  `connect` listener (`foreign_keys`, WAL, explicit `busy_timeout`), plus the
+  question of write transactions held across an LLM `await`, decided with the FastAPI
+  app / agent loop. Not in F14: no file database and no concurrent writer exist yet.
+- **Q1 scope extended (F72)**: a shared `WorkHours` type with range checks, used by
+  `AgentSpec` and `BusinessContext`; an end time before the start time is accepted
+  and documented as a window crossing midnight (the agent loop implements it).
+- Priority inside 4.7: F60 and F66 first (the two 🟠 that 4.7 handles).
+- Milestone table, "Code Review" column: ⚠️ (4.7) for "Core Pydantic models" and
+  "Database layer"; "LLM router" and "LLM clients" unchanged until step 10.
