@@ -1,4 +1,5 @@
-"""Tests for agents domain models: AgentSpec, AgentState, AgentStatus, Skill."""
+"""Tests for agents domain models: AgentSpec, AgentState, AgentStatus, Skill,
+BlockingQuestion."""
 
 from datetime import UTC, datetime
 
