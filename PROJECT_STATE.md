@@ -13,8 +13,8 @@ the Next steps plan below.
 | Feature | Feature Brief | Implementation Plan | TDD (tests → code) | Smoke Test | Spec Review | Code Review | Merged |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | Project scaffold | n/a | n/a | n/a | n/a | n/a | n/a | ✅ |
-| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | n/a | n/a | ✅ | n/a | — (step 4) | — (step 4) | ✅ |
-| Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | — (step 4) | — (step 4) | ✅ |
+| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | n/a | n/a | ✅ | n/a | ⚠️ (4.7) | — (step 4) | ✅ |
+| Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | ⚠️ (4.7) | — (step 4) | ✅ |
 | Generator Agent — interview | ✅ | ✅ | ✅ | ✅ | — (step 6) | ✅ ¹ | ✅ |
 | Generator Agent — org generation | ✅ | ✅ | ✅ | ✅ | — (step 7) | ✅ ¹ | ✅ |
 | Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (step 8) | ✅ |
@@ -878,6 +878,45 @@ section "4.4 — Docstrings".
 
 ---
 
+## Last session — 2026-10-29 (step 4, part 2 — 4.5)
+
+Step 4.5 — spec review of the foundations (branch `refactor/walkthrough-foundations`).
+No code change. Report: `docs/reviews/2026-10-29-foundations-spec-compliance.md`;
+method, findings and decisions in `docs/walkthroughs/step-4-foundations.md`, section
+"4.5 — Spec review".
+
+### Done (2026-10-29, 4.5)
+
+- `spec-reviewer` subagent run once, read-only, against ARCHITECTURE §1 / §2 / §3 /
+  §8 / §9, ADRs 0002, 0003, 0004, 0007 (amended), 0010, 0012 and the CLAUDE.md
+  conventions (no Feature Brief / Implementation Plan for the foundations); full
+  module content, not the branch diff; F1–F47 given as known.
+- Verdict ⚠️ partially compliant: ADR 0004 fully conformant, ADR 0010 in substance;
+  12 new findings (F48–F59), all 🟢, no runtime bug; 25 checklist items fail on
+  known findings. About 175 docstring statements of 4.4 checked accurate.
+- Every finding verified in the main session (code read, grep, probes; `claude-api`
+  skill loaded for `llm/`): 11 confirmed, 1 partly refuted (F58 part 2).
+- Milestone table: "Spec Review" ⚠️ (4.7) for the models and database rows.
+
+### New findings (4.5) and routing
+
+| # | Finding | Target |
+| --- | --- | --- |
+| F48 | `interview.py:197` serializes `message_ids` with `json.dumps` outside `db/` (ADR 0002) | 6.2 |
+| F49 | ARCHITECTURE §3 and ADR 0010 say prompts are "rendered with the agent's fields" (fixed system prompts + context message in fact) | 4.7, with F35 (Q7 scope extended: ADR 0010 amendment) |
+| F50 | `PromptLoader` reads files synchronously from async callers (`load_all()` never called) | Technical debt — FastAPI app |
+| F51 | Truncation WARNING untested (ADR 0012 §4) | 4.7 |
+| F52 | `llm/types.py`, `llm/errors.py`, `router/router.py` module docstrings without entry points | 4.7 |
+| F53–F55 | Inaccurate 4.4 docstrings: skill creators (`agents/models.py:8`), status setters (`:31`), in-place row writers (`db/tables.py:18`) | 4.7 |
+| F56 | "retry loops only cover invalid JSON" (`llm/errors.py:5`, ADR 0012 §4): org generation also retries on schema / structure errors | 4.7 (docstring), 4b.2 (ADR 0012 amendment) |
+| F57 | ARCHITECTURE §3 `Message` sketch lists `"system"`; code uses `"generator"` | 4.7, with F21 / F7 |
+| F58 | `_parse_frontmatter` docstring vs empty frontmatter (part 2 refuted) | 4.7, with F33 / F44 |
+| F59 | `_async_url`: substring test on the whole URL, redundant clause | 4.7, with F14 |
+
+**Stopped at:** 4.5 complete. Next: 4.6 (code review, `code-reviewer` subagent).
+
+---
+
 ## Next steps
 
 Each step follows the same cycle unless stated otherwise: create the branch from an
@@ -1009,17 +1048,19 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   order: direct argument, then `ANTHROPIC_API_KEY`); `prompts/loader.py` — module
   docstring per the convention, docstrings for `PromptLoader`, `LoadedPrompt`,
   `_parse_frontmatter` (F41)
-- [ ] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004, and for the LLM layer
-  against ADR 0007 (amended), ADR 0012 and ARCHITECTURE §2 / §8
+- [x] 4.5 Spec review against ARCHITECTURE §3 + ADRs 0002–0004, and for the LLM layer
+  against ADR 0007 (amended), ADR 0012 and ARCHITECTURE §2 / §8 — done 2026-10-29,
+  findings F48–F59 (`docs/reviews/2026-10-29-foundations-spec-compliance.md`)
 - [ ] 4.6 Code review
 - For 4.5 and 4.6, the subagent prompt points to
-  `docs/walkthroughs/step-4-foundations.md` and states: findings F1–F47 are already
-  known and routed — do not report them again; report only new findings, or an
-  argued disagreement with an existing finding or decision. 4.5 focuses on what the
-  walkthrough did not check systematically: CLAUDE.md conventions (file size,
-  docstrings, no prompt strings in Python source), ADR 0004 and ADR 0010, consistency
-  between the 4.4 docstrings and the code. Rationale: avoid re-deriving known findings
-  and de-duplicating them in 4.7, while keeping an independent review
+  `docs/walkthroughs/step-4-foundations.md` and states: findings F1–F59 (F48–F59 from
+  the 4.5 spec review, also in its report) are already known and routed — do not
+  report them again; report only new findings, or an argued disagreement with an
+  existing finding or decision. 4.5 focused on what the walkthrough did not check
+  systematically: CLAUDE.md conventions (file size, docstrings, no prompt strings in
+  Python source), ADR 0004 and ADR 0010, consistency between the 4.4 docstrings and
+  the code. Rationale: avoid re-deriving known findings and de-duplicating them in
+  4.7, while keeping an independent review
 - [ ] 4.7 Review findings together (walkthrough + 4.5 + 4.6), fix with TDD. Walkthrough
   findings (details in `docs/walkthroughs/step-4-foundations.md`):
   - F1: tests based on `model_copy(update=...)` (no validation) rebuilt through
@@ -1083,6 +1124,27 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F40: router tests check the `api_key` passed to `AnthropicClient` (direct key
     over environment, environment key used)
 
+  From the 4.5 spec review (`docs/reviews/2026-10-29-foundations-spec-compliance.md`):
+  - F49 (with F35, Q7 scope extended): ARCHITECTURE §3 "rendered with the agent's
+    fields" fixed (fixed system prompts + agent context in a message); **amend** ADR
+    0010 accordingly
+  - F57 (with F21 / F7): ARCHITECTURE §3 `Message` sketch — `"generator"` sentinel,
+    no `"system"`
+  - F51: test asserting the truncation WARNING (model, `stop_reason`, tokens, no
+    content)
+  - F52: `llm/types.py`, `llm/errors.py`, `router/router.py` module docstrings name
+    their entry points; `router.py` says who builds the router
+  - F53, F54, F55: docstrings fixed — skills also created by team setup /
+    reconfiguration (`agents/models.py`); org generation sets `PAUSED` at creation
+    (`AgentStatus`); the interview also updates a loaded row in place
+    (`db/tables.py`)
+  - F56: `llm/errors.py` docstring — retry loops cover invalid output (JSON, schema,
+    structure), never LLM errors (ADR 0012 sentence: step 4b.2)
+  - F58 (with F33 / F44): `_parse_frontmatter` docstring matches the rewritten parser
+    (empty frontmatter block)
+  - F59 (with F14): `_async_url` — remove the redundant `"aiosqlite" not in raw`
+    clause; test with a path containing "aiosqlite"
+
 ### Step 4b — Structured outputs
 
 Branch: `feat/structured-outputs` — before steps 6, 7, 8, which adopt it
@@ -1093,7 +1155,10 @@ Branch: `feat/structured-outputs` — before steps 6, 7, 8, which adopt it
   including the `Field` constraints added to `AgentSpec` in step 4.7 (`ge` / `le`,
   `pattern`): which keywords the provider accepts, and what the SDK does with
   unsupported ones (checked in its sources)
-- [ ] 4b.2 **Amend** ADR 0012 (the neutral contract gains a method)
+- [ ] 4b.2 **Amend** ADR 0012 (the neutral contract gains a method); the same
+  amendment corrects §4 "their retry loops only catch `JSONDecodeError`" — org
+  generation also retries on schema / structure errors, LLM errors are still never
+  retried (step 4.5, F56)
 - [ ] 4b.3 TDD: Anthropic implementation (`output_config.format` /
   `messages.parse()`), same `stop_reason` handling and typed errors as `complete()`;
   same typed SDK call (no `dict[str, Any]`) and transport-level tests as `complete()`
@@ -1138,7 +1203,10 @@ Branch: `refactor/walkthrough-interview`
   `smoke_generator_interview.py --llm-debug`
 - [ ] 6.2 Tech debt: `resume()` N sequential SELECTs → single `WHERE id IN (...)`
   query (TDD, test asserting the query count). The `message_ids` read-modify-write
-  in the same code stays out of scope (Technical debt, MessageDispatcher — F30)
+  in the same code stays out of scope (Technical debt, MessageDispatcher — F30), but
+  `_persist_messages` stops serializing `message_ids` itself
+  (`row.message_ids = json.dumps(...)`, `interview.py:197`) and goes through
+  `db/convert` (ADR 0002: JSON only in `db/` — step 4.5, F48)
 - [ ] 6.2b Partial state: `reply()` persists the user message before the LLM call, so a
   failed call (network, refusal, truncation) leaves the stored conversation ending with
   an unanswered user message — decide the fix (TDD)
@@ -1371,6 +1439,12 @@ Branch: `feat/llm-router` — full `/feature` workflow
   (`AgentValidationRecord.conversation_ids` references no `conversations` row) →
   observed in **step 8.1**, one conversation model decided with the
   **MessageDispatcher** design, together with F30 (walkthrough F45)
+- `PromptLoader` reads prompt files synchronously (`read_text`) on the first `get()`
+  of each key, from async callers, because nothing calls `load_all()` — contrary to
+  "`async def` for I/O" (CLAUDE.md) and to ARCHITECTURE §9 "loaded at startup" →
+  the app calls `load_all()` once at startup (lifespan), so runtime `get()` only hits
+  the cache; no async conversion → **FastAPI app** feature (step 4.5 spec review,
+  F50)
 
 ---
 
@@ -1435,3 +1509,5 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-23 | `AnthropicClient` calls the SDK with typed arguments (no `dict[str, Any]`) and converts the neutral messages to `MessageParam`, in step 4.7 after transport-level tests (not deferred to step 10.2) | mypy then rejects a misspelled parameter value before a paid call; protects steps 4b, 6, 7, 8, which touch these calls; step 10.2 only changes the conversion's input type |
 | 2026-10-29 | 4.4 docstrings for code that 4.7 removes or restructures: `render()` one factual line; `db/convert.py` module docstring only; `db/engine.py` documented as is, factually; untyped SDK call left uncommented | Describe what exists at the level a reader needs today; 24 full docstrings would push `convert.py` past the 500-line hard limit before its split; omitting load-bearing facts would make docstrings incomplete for 4.5 |
 | 2026-10-29 | Model fields documented in a Google `Attributes:` section, inline field comments moved into it (also for steps 6.4, 7.4, 8.7) | IDE hover shows docstrings, not comments; one source avoids drift; same style as `llm/errors.py` |
+| 2026-10-29 | Q7 scope extended (step 4.5, F49): step 4.7 also fixes ARCHITECTURE §3 and amends ADR 0010 ("prompts rendered with the agent's fields" → fixed system prompts + agent context in a message) | Otherwise the same inaccurate statement survives in two places once §9 is rewritten; ADRs are amended, never rewritten |
+| 2026-10-29 | Milestone "Spec Review" set to ⚠️ (4.7) for the models and database rows; the "LLM router" and "LLM clients" rows stay unchanged until those features formally start (step 10), although 4.5 reviewed `router.py` and `anthropic_client.py` | ⚠️ = done with open findings (legend); the LLM rows track features not started yet |

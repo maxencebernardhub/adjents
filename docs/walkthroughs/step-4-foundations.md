@@ -955,3 +955,81 @@ Numbering continues from 4.3. Severity: 🟢 low. No active bug.
 | F45 | `messaging/models.py`; `team_setup.py:846`, `reconfiguration.py:305` | Design / consistency | 🟢 | Two ways to group messages: the interview writes a `Conversation` row with ordered `message_ids`; team setup and reconfiguration write no `Conversation` row and store the conversation id in `metadata["conv_id"]` — `AgentValidationRecord.conversation_ids` references no `conversations` row (checked). Related to F30 → observe in 8.1; one conversation model decided with the `MessageDispatcher` design | 8.1, tech debt (MessageDispatcher) |
 | F46 | `db/engine.py` (`create_db_and_tables`) | Latent bug | 🟢 | Creates no table unless `adjents.db.tables` was imported first, and `engine.py` does not import it (checked in a fresh process: 0 tables, then 12 after the import) → import it in the engine module (`# noqa: F401`) + test in `test_db_engine.py` | 4.7 (with F14) |
 | F47 | `prompts/loader.py` (`load_all`) | Portability | 🟢 | Keys built with `str(Path)` use the OS separator: on Windows `load_all()` would cache `generator\interview` and `get("generator/interview")` would miss the cache (deduced from `pathlib` semantics, not run) → `as_posix()` + test | 4.7 (with F33 / F34) |
+
+---
+
+## 4.5 — Spec review
+
+Report: `docs/reviews/2026-10-29-foundations-spec-compliance.md` (subagent report +
+main-session verification).
+
+### Method
+
+- `spec-reviewer` subagent, one run, read-only. No Feature Brief / Implementation
+  Plan exists for the foundations, so the prompt gave the spec sources instead:
+  ARCHITECTURE §1, §2, §3, §8, §9; ADRs 0002, 0003, 0004, 0007 (amended), 0010, 0012;
+  `.claude/CLAUDE.md` conventions.
+- Full content of the 14 modules and their tests, not the branch diff (docstrings
+  only). Callers of steps 6–8 read only to check docstring statements.
+- F1–F47 and decisions Q1–Q8 / 4.4 given as known: only new findings or argued
+  disagreements reported.
+- Focus: CLAUDE.md conventions module by module; ADR 0004 and ADR 0010 decision by
+  decision; 4.4 docstrings ↔ code (statements listed from commits `9469392`,
+  `5019475`, `a8f7db0`, about 175 found accurate).
+- Every finding then verified in the main session (code read, grep, probes); the
+  `claude-api` skill was loaded for `llm/`, though no finding depended on SDK
+  behavior.
+
+### Result
+
+- ADR 0004: fully conformant (model, table, exact field list, valid / invalid /
+  roundtrip tests). ADR 0010: conformant in substance (no subclass per agent, COO =
+  `level == 0`, reconfiguration = `UPDATE`); "rendered with the agent's fields" is
+  inaccurate (F49). ADR 0007 (amended): conformant. ADR 0012: conformant in
+  decision; one untested WARNING (F51), one inaccurate descriptive sentence (F56).
+- CLAUDE.md conventions: no module above 300 lines except `db/convert.py` (F19); no
+  prompt string in Python source; no AI framework or unrequested dependency;
+  `mypy --strict` clean. Gaps: three `llm/` / router module docstrings without
+  entry points (F52), synchronous prompt file reads (F50).
+- 25 checklist items fail on known findings; 12 new findings, all 🟢.
+
+### Findings — 4.5
+
+Numbering continues from 4.4 (subagent N1–N12 → F48–F59). Severity: 🟢 low. No active
+bug.
+
+| # | File:line | Category | Sev. | Finding → recommendation | Step |
+| --- | --- | --- | :-: | --- | --- |
+| F48 | `generator/interview.py:197` | Violation of ADR 0002 | 🟢 | `row.message_ids = json.dumps(new_ids)`: JSON serialization outside `db/` (ADR 0002: "exclusively in the `db/` layer"). Same lines as F30, different concern → go through `db/convert` | 6.2 |
+| F49 | ARCH §3 l.157-158, ADR 0010 "Decision" | Docs | 🟢 | "Prompts … rendered with the agent's fields": system prompts are fixed, agent context goes in a message → fix §3 with F35, amend ADR 0010 (Q7 scope extended) | 4.7 |
+| F50 | `prompts/loader.py:144` | Convention (`async def` for I/O) | 🟢 | Synchronous `read_text` on the first `get()` of each key, from async callers, since `load_all()` is never called → the FastAPI app calls `load_all()` at startup (lifespan); no async conversion | tech debt (FastAPI app) |
+| F51 | `test_llm_anthropic.py:232-257` | Missing test (ADR 0012 §4) | 🟢 | The truncation WARNING (`anthropic_client.py:128`) has no assertion; only the refusal one does → characterization test | 4.7 |
+| F52 | `llm/types.py:1`, `llm/errors.py:1`, `router/router.py:1` | Docstrings (convention) | 🟢 | Module docstrings without entry points; `router.py` does not name who builds the router (the smoke scripts) → complete | 4.7 |
+| F53 | `agents/models.py:8-9` | Docstring ↔ code | 🟢 | "`GeneratorOrgGeneration` creates every … `Skill`": team setup and reconfiguration also create skills (`team_setup.py:598`, `reconfiguration.py:189`) → fix | 4.7 |
+| F54 | `agents/models.py:31-32` | Docstring ↔ code | 🟢 | "only team setup and reconfiguration set a status": org generation sets `PAUSED` (`org_generation.py:436`) → fix | 4.7 |
+| F55 | `db/tables.py:18-19` | Docstring ↔ code | 🟢 | Modules updating loaded rows in place: the interview is missing (`interview.py:197`) → fix | 4.7 |
+| F56 | `llm/errors.py:5`, ADR 0012 §4 | Docstring + ADR | 🟢 | "retry loops only cover invalid JSON": org generation also retries on schema and structure errors (`org_generation.py:390-414`); LLM errors still propagate → fix the docstring (4.7); amend the ADR 0012 sentence with the 4b.2 amendment | 4.7, 4b.2 |
+| F57 | ARCH §3 l.278-279 | Docs | 🟢 | `Message` sketch lists `"system"`; the code uses `"generator"`, never `"system"` (docstring fixed in 4.4, ARCHITECTURE not) → fix with F21 / F7 | 4.7 |
+| F58 | `prompts/loader.py:34-36` | Docstring ↔ code | 🟢 | An empty frontmatter (`---\n---\n`) is not recognised, contrary to a literal reading of the docstring (checked) → docstring rewritten with the parser (F33 / F44). Second part (`get()` `Raises:` omits F44's `ValueError`) refuted: 4.7 removes that error | 4.7 (with F33 / F44) |
+| F59 | `db/engine.py:36-38` | Docstring ↔ code | 🟢 | "already name aiosqlite" is a substring test on the whole URL: `sqlite:///./aiosqlite-data/a.db` is not rewritten (checked). The clause is redundant (`startswith("sqlite:///")` excludes `sqlite+aiosqlite:///`) → remove it, test | 4.7 (with F14) |
+
+### Corrections to earlier statements
+
+1. 4.3, "ADR 0012: all 6 points conform": §4 is conformant in decision only — the
+   truncation WARNING is untested (F51) and the ADR's sentence on retry loops is
+   inaccurate (F56).
+2. 4.4, "`llm/anthropic_client.py`, `types.py`, `errors.py` reviewed: accurate": the
+   `errors.py` parenthesis on retry loops is inaccurate (F56), and the `types.py` /
+   `errors.py` module docstrings lack entry points (F52) — the 4.4 review checked
+   accuracy, not the four-part convention.
+
+### Decisions — 4.5 (2026-10-29)
+
+- F48–F59 routed as listed above.
+- **Q7 scope extended** (F49): besides ARCHITECTURE §9 (F35), step 4.7 fixes
+  ARCHITECTURE §3 and amends ADR 0010 ("rendered with the agent's fields" → fixed
+  system prompts + agent context in a message). An ADR is amended, never rewritten.
+- F58 part 2 refuted: kept in the report with its justification, no action.
+- Milestone table, "Spec Review" column: ⚠️ (4.7) for "Core Pydantic models" and
+  "Database layer". "LLM router" and "LLM clients" unchanged until those features
+  formally start (step 10).
