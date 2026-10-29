@@ -1,14 +1,37 @@
 """SQLModel persistence tables — one per domain model (ADR 0002).
 
-Fields of type list[str] and dict[str, Any] are stored as JSON text.
-datetime fields are stored as ISO 8601 strings to preserve timezone info.
-Conversion to/from domain models is handled exclusively in db.convert.
+The domain models stay plain Pydantic classes; these `table=True` classes carry the
+persistence details instead: primary keys, table names, and column types SQLite
+can store. `list[str]` and `dict[str, Any]` fields are stored as JSON text, and
+`datetime` fields as ISO 8601 strings, which keep the UTC offset that SQLite's
+`DATETIME` columns would drop. `metadata` is a reserved attribute name on
+SQLAlchemy declarative classes, hence the `metadata_json` columns.
+
+Table classes do not validate, not even at construction: only SQL constraints
+(`NOT NULL`, primary key) apply, at commit. Validation happens in the domain
+models.
+
+Place in the flow: `db/convert.py` builds rows from domain models and turns rows
+back into domain models. The orchestrators add rows to their `AsyncSession`
+(`generator/interview.py`, `generator/org_generation.py`,
+`generator/team_setup.py`, `agents/reconfiguration.py`); all but org generation
+also query these classes with `select(...)`, and team setup and reconfiguration
+build some rows directly and update loaded rows in place. Importing this module
+registers every table in `SQLModel.metadata`, which `create_all` needs
+(`db/engine.py`, `tests/conftest.py`).
+
+Entry points: the 12 `*Table` classes.
+
+Related ADRs: 0002 (domain models vs tables), 0003 (async SQLite sessions), 0004
+(BlockingQuestion).
 """
 
 from sqlmodel import Field, SQLModel
 
 
 class AgentSpecTable(SQLModel, table=True):
+    """Row of `agent_specs`, mirroring `AgentSpec` (`agents/models.py`)."""
+
     __tablename__ = "agent_specs"
 
     id: str = Field(primary_key=True)
@@ -28,6 +51,8 @@ class AgentSpecTable(SQLModel, table=True):
 
 
 class AgentStateTable(SQLModel, table=True):
+    """Row of `agent_states`, mirroring `AgentState`; keyed by the agent's id."""
+
     __tablename__ = "agent_states"
 
     agent_id: str = Field(primary_key=True)
@@ -38,6 +63,8 @@ class AgentStateTable(SQLModel, table=True):
 
 
 class SkillTable(SQLModel, table=True):
+    """Row of `skills`, mirroring `Skill` (`agents/models.py`)."""
+
     __tablename__ = "skills"
 
     id: str = Field(primary_key=True)
@@ -49,6 +76,8 @@ class SkillTable(SQLModel, table=True):
 
 
 class MessageTable(SQLModel, table=True):
+    """Row of `messages`, mirroring `Message`; `metadata` is `metadata_json`."""
+
     __tablename__ = "messages"
 
     id: str = Field(primary_key=True)
@@ -61,6 +90,8 @@ class MessageTable(SQLModel, table=True):
 
 
 class ConversationTable(SQLModel, table=True):
+    """Row of `conversations`, mirroring `Conversation` (`messaging/models.py`)."""
+
     __tablename__ = "conversations"
 
     id: str = Field(primary_key=True)
@@ -70,6 +101,8 @@ class ConversationTable(SQLModel, table=True):
 
 
 class MemoryTable(SQLModel, table=True):
+    """Row of `memories`, mirroring `Memory`; `metadata` is `metadata_json`."""
+
     __tablename__ = "memories"
 
     id: str = Field(primary_key=True)
@@ -80,6 +113,8 @@ class MemoryTable(SQLModel, table=True):
 
 
 class DeliverableTable(SQLModel, table=True):
+    """Row of `deliverables`, mirroring `Deliverable` (`deliverables/models.py`)."""
+
     __tablename__ = "deliverables"
 
     id: str = Field(primary_key=True)
@@ -91,6 +126,8 @@ class DeliverableTable(SQLModel, table=True):
 
 
 class ProjectTable(SQLModel, table=True):
+    """Row of `projects`, mirroring `Project` (`projects/models.py`)."""
+
     __tablename__ = "projects"
 
     id: str = Field(primary_key=True)
@@ -105,6 +142,8 @@ class ProjectTable(SQLModel, table=True):
 
 
 class BlockingQuestionTable(SQLModel, table=True):
+    """Row of `blocking_questions`, mirroring `BlockingQuestion` (ADR 0004)."""
+
     __tablename__ = "blocking_questions"
 
     id: str = Field(primary_key=True)
@@ -118,6 +157,8 @@ class BlockingQuestionTable(SQLModel, table=True):
 
 
 class BusinessContextTable(SQLModel, table=True):
+    """Row of `business_contexts`, mirroring `BusinessContext`."""
+
     __tablename__ = "business_contexts"
 
     id: str = Field(primary_key=True)
@@ -141,6 +182,8 @@ class BusinessContextTable(SQLModel, table=True):
 
 
 class ValidationSessionTable(SQLModel, table=True):
+    """Row of `validation_sessions`, mirroring `ValidationSession` (team setup)."""
+
     __tablename__ = "validation_sessions"
 
     id: str = Field(primary_key=True)
@@ -150,6 +193,8 @@ class ValidationSessionTable(SQLModel, table=True):
 
 
 class AgentValidationRecordTable(SQLModel, table=True):
+    """Row of `agent_validation_records`, mirroring `AgentValidationRecord`."""
+
     __tablename__ = "agent_validation_records"
 
     id: str = Field(primary_key=True)

@@ -1,8 +1,32 @@
 """Conversion functions between Pydantic domain models and SQLModel tables.
 
-Each model has a to_table() and a from_table() function.
-JSON serialization of list[str] and dict[str, Any] fields, and ISO 8601
-datetime serialization, are handled exclusively here (ADR 0002).
+The only bridge between the two layers of ADR 0002: each domain model has an
+`<model>_to_table()` function (domain → row) and an `<model>_from_table()` function
+(row → domain). Every function maps every field explicitly, by name. The shared
+conventions:
+
+- `list[str]` and `dict[str, Any]` fields: `json.dumps()` / `json.loads()`.
+- `datetime` fields: `isoformat()` / `datetime.fromisoformat()`. The roundtrip
+  keeps the value and its UTC offset; a naive datetime comes back naive.
+- `StrEnum` fields: stored as their string value with `str()`, rebuilt with the
+  enum constructor.
+- `metadata` fields: stored in the `metadata_json` column.
+
+`*_from_table()` functions repair nothing. A malformed row raises a `ValueError`
+subclass: `json.JSONDecodeError` for invalid JSON, `ValueError` for an unknown
+enum value or an invalid date, `pydantic.ValidationError` for a value of the wrong
+type.
+
+Place in the flow: called by the orchestrators (`generator/interview.py`,
+`generator/org_generation.py`, `generator/team_setup.py`,
+`agents/reconfiguration.py`) before `session.add()` and after reading rows; by
+`tests/conftest.py` to insert fixtures. The team setup models are imported from
+`generator/team_setup.py`, which therefore imports this module lazily, inside its
+methods, to avoid a circular import.
+
+Entry points: the 24 `*_to_table()` / `*_from_table()` functions.
+
+Related ADRs: 0002 (domain models vs tables).
 """
 
 import json
