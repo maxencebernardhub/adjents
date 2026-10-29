@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-10-23 | Branch: refactor/walkthrough-foundations | Milestone: v0.1 — MVP
+> Updated: 2026-10-29 | Branch: refactor/walkthrough-foundations | Milestone: v0.1 — MVP
 
 ---
 
@@ -836,6 +836,48 @@ SQLModel, aiosqlite, pytest-asyncio, `anthropic` 2.1.0 sources), not from memory
 
 ---
 
+## Last session — 2026-10-29 (step 4, part 2 — 4.4)
+
+Step 4.4 — docstrings and comments for every module read in 4.1 → 4.3 (branch
+`refactor/walkthrough-foundations`). No behavior change. Details (files, decisions,
+corrections, `llm/` review, findings) in `docs/walkthroughs/step-4-foundations.md`,
+section "4.4 — Docstrings".
+
+### Done (2026-10-29)
+
+- 4.1 block (`9469392`): module docstrings per the convention and class docstrings
+  with `Attributes:` sections for the 6 domain model modules (F8); the
+  `Message.from_agent` comment corrected (`"generator"` sentinel, `"system"` unused);
+  `test_models_agents.py` module docstring lists `BlockingQuestion` (F11).
+- 4.2 block (`5019475`): module docstrings for `db/tables.py`, `db/convert.py` (shared
+  contract of the 24 functions, errors on a malformed row), `db/engine.py`; one-line
+  docstring per table class; docstrings for `_async_url`, `create_db_and_tables`,
+  `get_session`.
+- 4.3 block (`a8f7db0`): `LLMRouter` (API key resolution order) and `LLMConfigError`;
+  `prompts/loader.py` module docstring + `PromptLoader`, `LoadedPrompt`,
+  `_parse_frontmatter` (F41). `llm/anthropic_client.py`, `types.py`, `errors.py`
+  reviewed against the `claude-api` skill and the `anthropic` 2.1.0 sources: accurate,
+  unchanged.
+- Every statement checked against the code (grep, probes); three first-draft
+  statements corrected before review (async expiry raises `MissingGreenlet`,
+  `get()` cache replaced by `load_all()`, WebSocket behavior described as implemented).
+- No module crossed 300 lines; `db/convert.py` (428) was already above it (F19, 4.7).
+- `make lint && make typecheck && make test` green after each block (282 tests).
+
+### New findings (4.4) and routing
+
+| # | Finding | Target |
+| --- | --- | --- |
+| F43 | `LLMConfigError` points to `.env`, but the router only reads the process environment; only the smoke scripts load the dotenv file (same for `DATABASE_URL`) | Technical debt — FastAPI app |
+| F44 | `_parse_frontmatter` raises `ValueError` on a value like `²` (`isdigit()` true, `int()` fails) | 4.7, with F33 |
+| F45 | Two ways to group messages: interview → `Conversation` row; team setup / reconfiguration → no `Conversation` row, `metadata["conv_id"]` | 8.1 (observe) + Technical debt — MessageDispatcher |
+| F46 | `create_db_and_tables()` creates no table unless `adjents.db.tables` was imported first; `engine.py` does not import it | 4.7, with F14 |
+| F47 | `load_all()` keys use the OS path separator (`str(Path)`): cache miss on Windows | 4.7, with F33 / F34 |
+
+**Stopped at:** 4.4 complete. Next: 4.5 (spec review, `spec-reviewer` subagent).
+
+---
+
 ## Next steps
 
 Each step follows the same cycle unless stated otherwise: create the branch from an
@@ -957,7 +999,8 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
 - [x] 4.3 Walkthrough: `prompts/loader.py`, `llm/anthropic_client.py`,
   `llm/types.py`, `llm/errors.py`, `router/router.py` + tests (incl.
   `test_llm_errors.py`) — findings F32–F42
-- [ ] 4.4 Docstrings + comments (`anthropic_client.py`, `types.py` and `errors.py`
+- [x] 4.4 Docstrings + comments — done 2026-10-29, findings F43–F47
+  (`anthropic_client.py`, `types.py` and `errors.py`
   already have full docstrings from step 3: review only). From the walkthrough: class
   docstrings for the 6 model modules and module docstrings per the convention —
   purpose, place in the flow, entry points, related ADRs (F8);
@@ -970,7 +1013,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   against ADR 0007 (amended), ADR 0012 and ARCHITECTURE §2 / §8
 - [ ] 4.6 Code review
 - For 4.5 and 4.6, the subagent prompt points to
-  `docs/walkthroughs/step-4-foundations.md` and states: findings F1–F42 are already
+  `docs/walkthroughs/step-4-foundations.md` and states: findings F1–F47 are already
   known and routed — do not report them again; report only new findings, or an
   argued disagreement with an existing finding or decision. 4.5 focuses on what the
   walkthrough did not check systematically: CLAUDE.md conventions (file size,
@@ -998,6 +1041,8 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F14: engine and session factories in `db/engine.py` (no engine created at
     import), used by `conftest.py`; new `test_db_engine.py` (`_async_url`,
     `create_db_and_tables`, `get_session`)
+  - F46 (with F14): `engine.py` imports `adjents.db.tables` (`# noqa: F401`) so
+    `create_db_and_tables` always registers the 12 tables; test in a fresh process
   - F15: `expire_on_commit=False` in the shared session factory + test (attribute
     read after commit raises `MissingGreenlet` today)
   - F17: remove the table defaults that diverge from the domain (`is_paused=False`,
@@ -1020,6 +1065,10 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     own JSON braces; unused in production)
   - F33: frontmatter parser — normalize line endings, raise on an unterminated
     frontmatter block, tests
+  - F44 (with F33): a value accepted by `isdigit()` but rejected by `int()` (`²`) no
+    longer raises an uncaught `ValueError`; test
+  - F47 (with F33 / F34): `load_all()` keys built with `as_posix()` (OS-independent
+    separator); test
   - F34: loader tests on `tmp_path` files (parser cases from F33); `load_all` tests
     read the cache; no assertion on a real prompt's `model_hint`
   - F35 (Q7): ARCHITECTURE §9 "How prompts are loaded" rewritten — fixed system
@@ -1129,7 +1178,9 @@ Branch: `refactor/walkthrough-team-setup`
 
 - [ ] 8.1 Walkthrough: team setup tests → `generator/team_setup.py`,
   `agents/reconfiguration.py`, `utils/agent_context.py` → prompts `agent/intro.md` +
-  `extract_agent_adjustments.md` → run `smoke_team_setup.py --real --llm-debug`
+  `extract_agent_adjustments.md` → run `smoke_team_setup.py --real --llm-debug`.
+  Observe how team setup / reconfiguration group messages (no `Conversation` row,
+  `metadata["conv_id"]`, step 4.4 walkthrough F45)
 - [ ] 8.2 B1 (TDD — failing test first): JSON-serialize `responsibilities` /
   `escalation_rules` in `_apply_agent_updates`. Same root cause: `_apply_agent_updates`
   (both copies) and the state updates `setattr` on SQLModel table rows, which never
@@ -1310,6 +1361,16 @@ Branch: `feat/llm-router` — full `/feature` workflow
   reaches the LLM in a message (`_build_agent_context_message`), system prompts are
   fixed. If a prompt ever needs variables, decide the mechanism (`string.Template`
   as candidate — works on every current prompt, checked) → **agent loop** design
+- Nothing in the application loads the dotenv file: `LLMRouter` and `db/engine.py`
+  read the process environment only, and `LLMConfigError` tells the user to set the
+  key "in .env" — only the smoke scripts load it (`_load_env`) → the app loads it at
+  startup → **FastAPI app** feature (walkthrough F43)
+- Two ways to group messages into a conversation: the interview writes a
+  `Conversation` row with ordered `message_ids`; team setup and reconfiguration write
+  no `Conversation` row and store the conversation id in `metadata["conv_id"]`
+  (`AgentValidationRecord.conversation_ids` references no `conversations` row) →
+  observed in **step 8.1**, one conversation model decided with the
+  **MessageDispatcher** design, together with F30 (walkthrough F45)
 
 ---
 
@@ -1372,3 +1433,5 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-23 | Schema migration strategy decided in step 5.1b with an ADR, before the first column change (5.4); ARCHITECTURE §1 "migrations (via SQLModel)" removed in step 4.7 | `create_all` only creates missing tables, so an existing `adjents.db` fails with "no such column" after a column is added (checked); no database exists on disk yet, so nothing breaks before step 5 |
 | 2026-10-23 | `LoadedPrompt.render()` removed in step 4.7; system prompts stay fixed and agent context goes in a message; templating, if ever needed, decided with the agent loop | `render()` fails on the prompts' own JSON braces (3 of 5 production prompts) and has no caller; the context-message pattern already exists and keeps one shared system-prompt prefix for prompt caching. Rejected: `string.Template` now (API without consumer), escaping braces (fragile hand-edited prompts), documented status quo (keeps a trap) |
 | 2026-10-23 | `AnthropicClient` calls the SDK with typed arguments (no `dict[str, Any]`) and converts the neutral messages to `MessageParam`, in step 4.7 after transport-level tests (not deferred to step 10.2) | mypy then rejects a misspelled parameter value before a paid call; protects steps 4b, 6, 7, 8, which touch these calls; step 10.2 only changes the conversion's input type |
+| 2026-10-29 | 4.4 docstrings for code that 4.7 removes or restructures: `render()` one factual line; `db/convert.py` module docstring only; `db/engine.py` documented as is, factually; untyped SDK call left uncommented | Describe what exists at the level a reader needs today; 24 full docstrings would push `convert.py` past the 500-line hard limit before its split; omitting load-bearing facts would make docstrings incomplete for 4.5 |
+| 2026-10-29 | Model fields documented in a Google `Attributes:` section, inline field comments moved into it (also for steps 6.4, 7.4, 8.7) | IDE hover shows docstrings, not comments; one source avoids drift; same style as `llm/errors.py` |

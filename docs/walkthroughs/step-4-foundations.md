@@ -863,3 +863,95 @@ Out of scope, recorded for other steps:
   conversion's input type. Rejected: (b) wait for 10.2 (no protection during 4b, 6, 7,
   8).
 - F32–F42 routed to the target steps listed above.
+
+---
+
+## 4.4 — Docstrings
+
+Docstrings and comments only, no behavior change; every statement checked against the
+code (grep, probes running the installed libraries), and for `llm/` against the
+`claude-api` skill and the `anthropic` 2.1.0 sources. Three commits, one per block:
+`9469392` (4.1), `5019475` (4.2), `a8f7db0` (4.3). `make lint && make typecheck &&
+make test` green after each block (282 tests).
+
+### Files — block by block
+
+| Block | File | Lines | Change |
+| --- | --- | ---: | --- |
+| 4.1 | `agents/models.py` | 60 → 163 | Module docstring per the convention; class docstrings with `Attributes:` for the 5 classes (`AgentStatus` members included) |
+| 4.1 | `messaging/models.py` | 23 → 66 | Module + `Message`, `Conversation`; the `from_agent` comment corrected (`"generator"` sentinel, `"system"` unused) |
+| 4.1 | `memory/models.py`, `projects/models.py`, `deliverables/models.py` | 14 → 38, 24 → 60, 14 → 38 | Module + class docstrings; "no code produces or reads it yet" |
+| 4.1 | `generator/models.py` | 26 → 74 | Module + `BusinessContext`, fields described from `extract_business_context.md` |
+| 4.1 | `tests/test_models_agents.py` | 307 → 308 | Module docstring lists `BlockingQuestion` (F11) |
+| 4.2 | `db/tables.py` | 164 → 209 | Module docstring per the convention; one-line docstring per table naming the mirrored domain model |
+| 4.2 | `db/convert.py` | 404 → 428 | Module docstring only: the shared contract of the 24 functions and the errors raised on a malformed row |
+| 4.2 | `db/engine.py` | 35 → 73 | Module + `_async_url`, `create_db_and_tables`, `get_session` |
+| 4.3 | `router/router.py` | 41 → 67 | `LLMRouter` (key resolution order), `LLMConfigError` (F41) |
+| 4.3 | `prompts/loader.py` | 64 → 146 | Module + `_parse_frontmatter`, `LoadedPrompt`, `render`, `PromptLoader`, `load_all`, `get`, `_load` (F41) |
+| 4.3 | `llm/anthropic_client.py`, `types.py`, `errors.py` | unchanged | Reviewed: accurate (see below) |
+
+No module crossed the 300-line review trigger; `db/convert.py` was already above it
+(F19, split in 4.7) and stays below the 500-line hard limit.
+
+### Decisions — 4.4 (2026-10-29)
+
+- **Code that 4.7 removes or restructures** — document what exists, at the level a
+  reader needs today, without investing in detail that will go:
+  - `LoadedPrompt.render()`: one factual line ("`{name}` placeholders replaced by
+    `str.format_map`"), no warning — a warning would put a known problem in a
+    docstring.
+  - `db/convert.py`: module docstring only. 24 full Google docstrings (~190 lines)
+    would have pushed the file to ~600 lines, past the hard limit, before the split;
+    the `x_to_table` / `x_from_table` names already state the contract.
+  - `db/engine.py`: documented as is, factually (engine built at import, path relative
+    to the working directory, `expire_on_commit=True`, no caller yet) — omitting these
+    facts would leave the docstrings incomplete against the code, which 4.5 checks.
+  - `anthropic_client.py` untyped SDK call: nothing added (review only); a comment on
+    the `dict[str, Any]` would document a known problem on lines 4.7 replaces.
+- **Model fields documented in an `Attributes:` section** (option a), with the inline
+  field comments moved into it, no information lost: IDE hover shows docstrings, not
+  comments; one source avoids drift; same style as `llm/errors.py`. Applies to the
+  later docstring steps (6.4, 7.4, 8.7).
+- **Facts, not judgments**: a docstring states current behavior, including surprising
+  behavior (e.g. "unknown keys are ignored", "reading an attribute after commit raises
+  `MissingGreenlet`"); it never calls it a bug and never cites a finding number.
+- F43–F47 routed as listed below.
+
+### Corrections made while writing
+
+Three statements of a first draft were wrong and were corrected before review:
+
+1. `get_session()`: "expired objects are reloaded on next attribute access" — true for
+   a sync session, false in async: the implicit reload raises `MissingGreenlet`
+   (checked); the docstring now says so and names `await session.refresh(obj)`.
+2. `PromptLoader.get()`: "the same object on every call" — false once `load_all()`
+   runs again (it replaces the cache entries).
+3. `AgentState` / `BlockingQuestion`: WebSocket broadcast and frontend matching were
+   described as if implemented — rewritten as intentions (no WebSocket code exists).
+
+### `llm/` review (checked)
+
+- Non-streaming refusal: `_calculate_nonstreaming_timeout` (`_base_client.py:854`)
+  raises when `3600 × max_tokens / 128000 > 600`, i.e. above ~21,333 — matches the
+  module docstring.
+- `StopReason` has 7 values (`types/stop_reason.py`); `get_final_text()` ignores
+  `stop_reason` and raises `RuntimeError` without a text block
+  (`lib/streaming/_messages.py:269`) — matches "Response side".
+- From the `claude-api` skill: assistant prefill is rejected on Opus 5.5 / Sonnet 5.5;
+  `display` defaults to `"omitted"` on these models (hence the explicit `summarized`);
+  `stop_details` is set only on refusals; thinking counts toward `max_tokens`.
+- Only `LLMRouter` builds `AnthropicClient` instances (grep), as the module docstring
+  states. The skill's "enable server-side fallbacks by default" advice is a deliberate
+  deviation already recorded (ADR 0012 §5).
+
+### Findings — 4.4
+
+Numbering continues from 4.3. Severity: 🟢 low. No active bug.
+
+| # | File:line | Category | Sev. | Finding → recommendation | Step |
+| --- | --- | --- | :-: | --- | --- |
+| F43 | `router/router.py:30`, `db/engine.py` | Config / docs | 🟢 | `LLMConfigError` says "Set ANTHROPIC_API_KEY in .env", but the router only reads the process environment; only the smoke scripts load the dotenv file (`_load_env`). Same for `DATABASE_URL` → the FastAPI app loads it at startup | tech debt (FastAPI app) |
+| F44 | `prompts/loader.py` (`_parse_frontmatter`) | Robustness | 🟢 | A value accepted by `str.isdigit()` but rejected by `int()` (e.g. `²`) raises `ValueError` (checked) → fix with the parser rewrite | 4.7 (with F33) |
+| F45 | `messaging/models.py`; `team_setup.py:846`, `reconfiguration.py:305` | Design / consistency | 🟢 | Two ways to group messages: the interview writes a `Conversation` row with ordered `message_ids`; team setup and reconfiguration write no `Conversation` row and store the conversation id in `metadata["conv_id"]` — `AgentValidationRecord.conversation_ids` references no `conversations` row (checked). Related to F30 → observe in 8.1; one conversation model decided with the `MessageDispatcher` design | 8.1, tech debt (MessageDispatcher) |
+| F46 | `db/engine.py` (`create_db_and_tables`) | Latent bug | 🟢 | Creates no table unless `adjents.db.tables` was imported first, and `engine.py` does not import it (checked in a fresh process: 0 tables, then 12 after the import) → import it in the engine module (`# noqa: F401`) + test in `test_db_engine.py` | 4.7 (with F14) |
+| F47 | `prompts/loader.py` (`load_all`) | Portability | 🟢 | Keys built with `str(Path)` use the OS separator: on Windows `load_all()` would cache `generator\interview` and `get("generator/interview")` would miss the cache (deduced from `pathlib` semantics, not run) → `as_posix()` + test | 4.7 (with F33 / F34) |
