@@ -11,12 +11,15 @@ complete organization: a COO, domain leads (Sales, Finance, Marketing, Ops...), 
 specialists below them. Each agent has its own memory, skills, and the autonomy to
 act without being told what to do at every step.
 
-> **Status**: Pre-MVP — v0.1 in active development.
+> **Status**: Pre-MVP — v0.1 in active development. The backend core works today and
+> runs through smoke scripts; the web app (API, workspace, chat) is not built yet.
 > See [VISION.md](docs/VISION.md) for the full product specification.
 
 ---
 
-## What v0.1 includes
+## v0.1 scope
+
+### Working today (backend)
 
 - **Conversational onboarding** — Generator Agent conducts a deep interview and
   produces a full persistent agent organization tailored to your business
@@ -26,6 +29,9 @@ act without being told what to do at every step.
 - **Direct agent reconfiguration** — after go-live, open a conversation with any agent
   to rename it, update its responsibilities, adjust skills, or change work hours;
   structural changes (domain, hierarchy) are deferred to v0.2
+
+### In progress
+
 - **Autonomous agent loop** — agents wake up on a configurable schedule, reason
   about their objectives, and act without waiting for instructions
 - **2D RPG workspace** — a house-style interface where each agent is a named
@@ -37,7 +43,8 @@ act without being told what to do at every step.
 - **Deliverables** — agents write outputs (documents, drafts, notes) to a local
   structured directory
 - **Local-first** — runs 100% offline with Ollama; cloud LLMs (Claude, OpenAI,
-  Gemini) are optional enhancements for complex tasks
+  Gemini) are optional enhancements for complex tasks. Today only the Anthropic
+  client exists; Ollama, OpenAI and Gemini arrive with the LLM router
 
 ---
 
@@ -45,9 +52,12 @@ act without being told what to do at every step.
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
-- [pnpm](https://pnpm.io/) (Node.js package manager)
-- [Ollama](https://ollama.com/) with at least one model pulled (e.g. `ollama pull qwen2.5:7b`)
-- Optional: Anthropic / OpenAI / Google API key for cloud LLM tasks
+- Node.js 24 and [pnpm](https://pnpm.io/) (the pinned pnpm version is selected
+  automatically from `frontend/package.json`)
+- An Anthropic API key — required by the features working today
+- [Ollama](https://ollama.com/) with at least one model pulled
+  (e.g. `ollama pull qwen3.5:4b`) — used once the LLM router lands
+- Optional: OpenAI / Google API key (once the LLM router lands)
 
 ## Installation
 
@@ -65,9 +75,6 @@ make install
 ## Usage
 
 ```bash
-# Start backend (FastAPI :8000) + frontend (Vite :5173)
-make dev
-
 # Run tests
 make test
 
@@ -76,7 +83,20 @@ make lint
 make typecheck
 ```
 
-Then open [http://localhost:5173](http://localhost:5173).
+To see the working features end to end, run the smoke scripts (real LLM calls,
+`ANTHROPIC_API_KEY` required, except the default mock mode of the team setup script)
+— see [backend/README.md](backend/README.md#scripts):
+
+```bash
+cd backend
+uv run python scripts/smoke_generator_interview.py
+uv run python scripts/smoke_generator_org.py
+uv run python scripts/smoke_team_setup.py          # mock mode, no API key
+uv run python scripts/smoke_team_setup.py --real
+```
+
+`make dev` (FastAPI on :8000 + Vite on :5173) becomes usable once the FastAPI app is
+built.
 
 ---
 
@@ -128,10 +148,20 @@ frontend technology choices.
 
 Key decisions at a glance:
 
-- **Agents are data, not code** — `AgentSpec` (Pydantic) + prompt file + memory namespace
+- **Agents are data, not code** — `AgentSpec` (Pydantic) + shared prompt templates +
+  memory namespace
 - **No AI framework** — official LLM SDKs + custom agent loop + message bus from scratch
 - **Local-first** — SQLite + Chroma, works offline, cloud is optional
 - **PixiJS** for the 2D workspace canvas, React for everything else
+
+## Engineering practices
+
+- Every significant decision is recorded as an ADR in [docs/decisions/](docs/decisions/)
+- Each feature goes through a written spec and implementation plan
+  ([docs/specs/](docs/specs/)), test-driven development, then a spec compliance review
+  and a code review ([docs/reviews/](docs/reviews/))
+- `mypy --strict`, Ruff, pytest, ESLint, Prettier and `tsc` on every push and pull
+  request (GitHub Actions)
 
 ---
 
@@ -140,21 +170,27 @@ Key decisions at a glance:
 | Version | Scope |
 | --- | --- |
 | **v0.1** | Onboarding, autonomous agent loop, 2D workspace, deliverables *(in progress)* |
-| **v0.2** | Python sandbox for skills, web search, external event triggers, projects |
-| **v0.3** | MCP integrations, animated UI sprites |
-| **v1.0** | One-click deploy for non-technical users |
+| **v0.2** | Python sandbox for skills, web search, external event triggers, projects, org restructuring, first integrations |
+| **v0.3** | Broader MCP integrations, animated UI sprites |
+| **v1.0** | Production-ready, one-click deploy for non-technical users |
 
-See [VISION.md §4](docs/VISION.md) for the detailed roadmap and integration philosophy.
+The roadmap is indicative. See [VISION.md §4](docs/VISION.md) for details and the
+integration philosophy.
 
 ---
 
 ## Contributing
 
-This project is in early development. Contributions, issues, and feedback are welcome.
+This project is in early development. Issues, feedback and discussions are welcome.
 
-Architecture decisions are documented in [docs/decisions/](docs/decisions/) as ADRs.
-Please open an issue before submitting a significant pull request.
+External pull requests are not accepted for now: the project has a single author,
+which keeps its licensing open for future versions (see
+[ADR 0013](docs/decisions/0013-mit-license-for-public-release.md)). If you have a
+fix or an idea, please open an issue.
 
 ## License
 
-[MIT](LICENSE) — Maxence Bernard, 2026
+The source code is released under the [MIT License](LICENSE) — Maxence Bernard, 2026.
+
+The Adjents name, logo and the adjents.com domain are not covered by the license:
+forks may reuse the code but must not present themselves as Adjents.
