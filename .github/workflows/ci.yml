@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Both jobs only read the code: a read-only GITHUB_TOKEN limits what a compromised
+# third-party action could do, whatever the repository default becomes.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend — Lint, Typecheck & Test
