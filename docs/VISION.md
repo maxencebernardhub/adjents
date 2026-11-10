@@ -478,9 +478,12 @@ assessed concretely. The approach may be adjusted if a better option emerges.
 
 ## 6. License & philosophy
 
-- **MIT License**
-- Open-source forever for the core
-- Future commercial version possible (managed hosting, premium support) but the core stays open
+- **MIT License** — confirmed for the public release in ADR 0013, with guardrails
+  (no external code contributions without a CLA; the Adjents name and domain are not
+  licensed) and a review trigger for the license of future versions
+- Open source for the core; versions already published under MIT stay MIT, while the
+  license of future versions may change under the conditions set in ADR 0013
+- Future commercial version possible (managed hosting, premium support)
 - Built in public — every meaningful decision documented in `docs/decisions/`
 
 ## 7. Author
