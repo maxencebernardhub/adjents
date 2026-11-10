@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-10-29 | Branch: refactor/walkthrough-foundations | Milestone: v0.1 — MVP
+> Updated: 2026-11-10 | Branch: refactor/walkthrough-foundations | Milestone: v0.1 — MVP
 
 ---
 
@@ -964,6 +964,67 @@ F60 and F66 first).
 
 ---
 
+## Last session — 2026-11-10 (interlude — public release)
+
+Interlude between 4.6 and 4.7: license decision, repository made public, GitHub
+settings hardened. Two short branches from main, merged through PRs #5 and #6; main
+then merged into `refactor/walkthrough-foundations` (no conflict; lint, typecheck,
+282 tests green).
+
+### Done (2026-11-10)
+
+- **Secret scan of the full history** (60 commits, all refs) before going public: no
+  real key or password; only fake test keys in `tests/test_router.py`; the
+  environment template holds placeholders only. Confirmed after going public by
+  GitHub secret scanning (0 alert).
+- **ADR 0013** — MIT kept for the public release, with three guardrails: no external
+  code contributions without a CLA, the Adjents name / logo / `adjents.com` not
+  licensed, review trigger for the license of future versions (FSL-1.1-ALv2 as the
+  default candidate). VISION §6 amended ("open-source forever" contradicted the
+  review trigger).
+- **README aligned with the actual state** (PR #5): v0.1 scope split into "working
+  today" / "in progress", smoke scripts instead of `make dev` (no FastAPI app yet),
+  Anthropic key required today, Node.js 24, Ollama model aligned with the environment
+  template (`qwen3.5:4b`), new "Engineering practices" section, roadmap aligned with
+  VISION §4.3, contribution policy and trademark notice.
+- **CI token read-only** (PR #6): `permissions: contents: read` at the workflow level
+  in `ci.yml`; closed the two CodeQL `actions/missing-workflow-permissions` alerts.
+- **Repository made public** and configured on GitHub (by the user, checked through
+  the API):
+  - General: merge commits only, head branches auto-deleted, Wiki / Discussions /
+    Projects off, pull request creation restricted to collaborators, commit comments
+    off, release immutability on; description and 15 topics set
+  - Security: private vulnerability reporting, Dependabot alerts + grouped security
+    updates (version updates off), CodeQL default setup (Python, JS/TS, Actions),
+    secret scanning + push protection
+  - Ruleset `protect-main` (default branch): pull request required (0 approvals,
+    merge method `merge` only), required checks "Backend — Lint, Typecheck & Test" +
+    "Frontend — Lint, Typecheck & Test", signed commits, no force push, no deletion;
+    bypass: repository admin, pull requests only
+  - Actions: default workflow token read-only, Actions cannot create or approve pull
+    requests, approval required for all external contributors' fork workflows
+- **Commit attribution**: merge commits of PRs #1–#4 carried the Gmail address
+  because a server-side merge (`gh pr merge` or the web button) uses the GitHub
+  primary email, not the local git config. The primary email is now
+  `maxence@maxencebernardhub.com`; history not rewritten (checked on PRs #5 and #6).
+
+### Findings (2026-11-10)
+
+- A **classic branch protection rule** on `main` (created by mistake while exploring
+  Settings → Branches) required 1 approval with "enforce admins": PR #6 stayed
+  `BLOCKED` / `REVIEW_REQUIRED` although the ruleset asks for 0 approvals — the two
+  systems stack and a solo maintainer cannot approve their own PR. Deleted; the
+  ruleset is the only protection. The ruleset option "Require an additional approval
+  for unattributed Copilot pull requests" (`require_extra_approval_for_unattributed_changes`)
+  was not the cause and stays at its default.
+- Every commit since 2026-10-16 is SSH-signed and "Verified" on GitHub; the 22
+  commits of May–June 2026 are unsigned (the ruleset only checks new commits).
+
+**Stopped at:** interlude complete. Next: 4.7 (review findings together, fix with
+TDD — F60 and F66 first).
+
+---
+
 ## Next steps
 
 Each step follows the same cycle unless stated otherwise: create the branch from an
@@ -1617,3 +1678,6 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-10-29 | Q1 scope extended (step 4.6, F72): one shared `WorkHours` type with range checks for `AgentSpec` and `BusinessContext`; an end before the start = a window crossing midnight, accepted and documented | A format-only pattern accepts `99:99-25:00`; constraining only `AgentSpec` moves an invalid extraction value into paid org generation retries; a solopreneur working late is a legitimate case |
 | 2026-10-29 | WAL + explicit `busy_timeout` merged into the foreign-keys Technical debt entry (Q4), not into the 4.7 engine factory (step 4.6, F69) | One `connect` listener for every SQLite pragma; no file database and no concurrent writer exist before the FastAPI app / agent loop |
 | 2026-10-29 | Pickling the LLM errors left to Technical debt (step 4.6, F64); milestone "Code Review" set to ⚠️ (4.7) for the models and database rows | No process boundary consumes them today (same reasoning as Q7); ⚠️ = done with open findings |
+| 2026-11-10 | MIT kept for the public release; no external code contributions without a CLA; brand not licensed; license of future versions reviewed if a paid hosted version is prepared or traction makes a commercial clone plausible (ADR 0013) | Primary purpose is a public portfolio; in this market the code is not the moat (funded SaaS and MIT clones exist); sole copyright keeps relicensing open. Rejected: FSL, AGPL, Apache-2.0, BSL, custom licenses, no license |
+| 2026-11-10 | Repository public; `main` protected by a single ruleset (`protect-main`), never by a classic branch protection rule | Rulesets are GitHub's current mechanism; a classic rule stacks with the ruleset and its approval count blocks a solo maintainer |
+| 2026-11-10 | CI `GITHUB_TOKEN` declared read-only in `ci.yml`, on top of the repository default | Defense in depth against a compromised third-party action; independent of the repository setting |
