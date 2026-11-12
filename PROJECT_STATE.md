@@ -1041,7 +1041,7 @@ list: Next steps → Step 4 → 4.7.
 | 3 | `db/convert.py` → `db/convert/` package | F19, F26 (imports) | ✅ `ebaf327` |
 | 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | ✅ `dac9168` |
 | 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | ✅ `ccff431` |
-| 6 | Tables | F17, F18, F23, F25, F55 | — |
+| 6 | Tables | F17, F18, F23, F25, F55 | ✅ `6ed7c78` |
 | 7 | `AgentSpec` constraints | F3, F72, F53, F54 | — |
 | 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | — |
 | 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | — |
@@ -1211,12 +1211,39 @@ check in block 6).
   team setup, reconfiguration tests unchanged and green).
 - 312 tests; lint, typecheck green.
 
-**Stopped at:** block 5 done. Next: block 6 (tables — F17 remove the table defaults
-that diverge from the domain, check whether removing `default=None` on nullable
-columns changes anything in SQL; F18 schema drift test over the 12 pairs; F23
-`test_all_tables_exist`; F25 constraint tests replacing the roundtrips of
-`test_db_tables.py`; F55 `db/tables.py` docstring — the interview also updates a
-loaded row in place).
+### Block 6 — tables (`6ed7c78`)
+
+- Probe first: SQLModel table defaults are Python-side only — the DDL is identical
+  with or without them (no SQL `DEFAULT`), so no existing database is affected.
+  With a default, an omitted field gets a silent value; without, an omitted
+  `NOT NULL` column fails at commit (`IntegrityError`) and mypy reports any omitted
+  field at construction, nullable ones included (`Missing named argument`).
+- F17: every default removed except primary keys (25 `NOT NULL` columns with
+  `"[]"` / `"{}"` / `False`, and every `default=None`); `Field(...)` kept only for
+  `primary_key=True` (a bare annotation is equivalent to an empty `Field()`; column
+  type and nullability come from the annotation). mypy stayed clean: the direct
+  table writes of steps 6–8 already pass every field.
+- F55 + docstring: the interview also updates loaded rows in place (checked:
+  `interview.py:197`); new rule stated — no column default, nullable exactly where
+  the domain field accepts `None`; `db/engine.py` (not `conftest.py`) imports the
+  module.
+- `test_db_tables.py` rewritten (384 → 265 lines): F23 exact set of 12 tables by
+  introspection (no `# type: ignore`); F18 schema drift over the 12 pairs — names
+  (`metadata` → `metadata_json`) **and nullability** (beyond F18's names-only
+  recommendation: what guarantees the docstring rule); one complete valid row per
+  table; F25 one test per `NOT NULL` non-key column (64) omitting it →
+  `IntegrityError`. Red: exactly the 25 defaulted columns (`DID NOT RAISE`); the
+  drift, table-set, complete-row and 39 other `NOT NULL` tests passed at once
+  (characterization). The 15 SQLAlchemy-only roundtrips (tautological since block
+  5) and the dead `test_unused_import_unused` removed.
+- 384 tests; lint, typecheck green.
+
+**Stopped at:** block 6 done (end of the DB blocks; `/clear` planned here). Next:
+block 7 (`AgentSpec` constraints — F3 / Q1: `level ≥ 0`, interval in [300, 3600],
+`visual_character` in a reference `frozenset` (decision C: `AfterValidator`, type
+stays `str`), reference constants in `agents/models.py`; F72: shared `WorkHours`
+type with range checks used by `AgentSpec` and `BusinessContext`, overnight window
+accepted, start == end and `24:00` rejected (decision D); F53, F54 docstrings).
 
 ---
 
@@ -1408,17 +1435,21 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     longer read SQLite — read back in a fresh session (or `expunge_all()`) and add a
     guard test (row corrupted in raw SQL → `*_from_table` raises; also F26's
     corrupt-JSON case)
-  - F17: remove the table defaults that diverge from the domain (`is_paused=False`,
+  - ✅ (block 6, `6ed7c78`) F17: remove the table defaults that diverge from the
+    domain (`is_paused=False`,
     `"[]"`…) so an omission fails with `NOT NULL` instead of a silent value
-  - F18: schema drift test (ADR 0002): domain fields == table columns, parametrized,
+  - ✅ (block 6, `6ed7c78`) F18: schema drift test (ADR 0002): domain fields ==
+    table columns, parametrized,
     with the `metadata` → `metadata_json` rename
   - ✅ (block 3, `ebaf327`) F19 (Q5): split `db/convert.py` (404 lines) into a `db/convert/` package per
     domain, mirroring the domain modules
   - F21 (Q6): ARCHITECTURE §1 — remove "migrations (via SQLModel)"; §3 — fix
     "`fromisoformat` … timezone-aware" (a naive string stays naive)
-  - F23: `test_all_tables_exist` (12 tables, exact set instead of `issubset`,
+  - ✅ (block 6, `6ed7c78`) F23: `test_all_tables_exist` (12 tables, exact set
+    instead of `issubset`,
     docstring); delete the dead `test_unused_import_unused`
-  - F25: replace the SQLAlchemy-only table tests with constraint tests (`NOT NULL`
+  - ✅ (block 6, `6ed7c78`) F25: replace the SQLAlchemy-only table tests with
+    constraint tests (`NOT NULL`
     rejections), alongside F18
   - F26: `test_db_convert.py` — module-level imports (✅ block 3, `ebaf327`); tests
     for a naive date (block 8), corrupt JSON and an unknown enum value in a row
@@ -1472,7 +1503,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F53, F54, F55: docstrings fixed — skills also created by team setup /
     reconfiguration (`agents/models.py`); org generation sets `PAUSED` at creation
     (`AgentStatus`); the interview also updates a loaded row in place
-    (`db/tables.py`)
+    (`db/tables.py`) — F55 ✅ (block 6, `6ed7c78`); F53, F54 in block 7
   - F56: `llm/errors.py` docstring — retry loops cover invalid output (JSON, schema,
     structure), never LLM errors (ADR 0012 sentence: step 4b.2)
   - F58 (with F33 / F44): `_parse_frontmatter` docstring matches the rewritten parser
