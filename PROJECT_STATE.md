@@ -1045,7 +1045,7 @@ list: Next steps → Step 4 → 4.7.
 | 7 | `AgentSpec` constraints | F3, F72, F53, F54 | ✅ `eadf81a` |
 | 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | ✅ `0737b88` |
 | 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | ✅ `62adcb9` |
-| 10 | LLM client | F37 + F71, then F36; F51, F52, F56 | — |
+| 10 | LLM client | F37 + F71, then F36; F51, F52, F56 | ✅ `a65a60f`, `dee49e4`, `6ed84a3`, `c3d11f2` |
 | 11 | Docs | F7, F21, F35, F49 (ADR 0010 amendment), F57; walkthrough "4.7 — Fixes" | — |
 
 Order: F60 first (🟠, isolated); F2 next so mypy checks every test written
@@ -1350,13 +1350,62 @@ check in block 6).
   above), `as_posix()` keys (cannot fail on macOS), cache, real prompts.
 - `loader.py` 146 → 172 lines; 583 tests; lint, typecheck green.
 
-**Stopped at:** block 9 done. Next: block 10 (LLM client — load the `claude-api`
-skill and read the installed SDK sources (`anthropic` 2.1.0) first; decision A:
-confirm `httpx2` as a dev dependency with the user before adding it; F37 + F71
-transport-level tests through `httpx2.MockTransport` (auth header, SDK environment
-variables removed), then F36 typed `messages.stream(...)` call; F51 truncation
-WARNING test; F52 `llm/types.py`, `llm/errors.py` module docstrings; F56
-`llm/errors.py` docstring).
+### Block 10 — LLM client (`a65a60f`, `dee49e4`, `6ed84a3`, `c3d11f2`)
+
+- Checked in the `anthropic` 2.1.0 sources and by probes through
+  `AnthropicClient.complete()` (real SDK over `httpx2.MockTransport`): the key is
+  sent as `Authorization: Bearer` (`_client.py:819-823`), never `x-api-key`; with an
+  explicit key no credential variable is read, but `ANTHROPIC_BASE_URL` and
+  `ANTHROPIC_CUSTOM_HEADERS` are — a custom `Authorization` header replaces the key
+  (probe: `Bearer other` sent) and the base URL sends the request, key included, to
+  another host; the SDK rejects an `http_client` that is not an `httpx2.AsyncClient`
+  (`_base_client.py:1877`), so `httpx`'s `MockTransport` cannot be used;
+  `MessageParam` is a union of three roles, `system` included (mid-conversation
+  system messages).
+- Decided with the user, after a pros / cons review of each point: decision A
+  applied (`uv add --dev "httpx2>=2.16.0"`, locked version unchanged); transport
+  injected by patching `AsyncAnthropic` in the client module with a factory calling
+  the real SDK — no `http_client` parameter on `AnthropicClient` (public API change
+  during a walkthrough; client lifecycle belongs to the FastAPI app, F39); only the
+  `user` / `assistant` roles, `ValueError` otherwise, `system` included (no system
+  role in the neutral contract; Anthropic-specific), naming the role and its index,
+  never the content; the mocked `test_complete_without_system_omits_key` removed
+  (the transport test asserts the exact body); SDK environment variables → Technical
+  debt (FastAPI app).
+- F37 + F71 (`a65a60f`, `test:`): `transport` fixture (`delenv` of both variables),
+  4 tests — body and auth header with / without `system`, refusal read from the
+  stream, mid-stream error event → generic `APIStatusError`, `status_code == 200`,
+  one request. Green at once by design (they had to pass before F36); mutations
+  caught (altered key, `"summarised"`).
+- F36 (`dee49e4`, `refactor:`): typed `messages.stream(...)` call, `anthropic.omit`
+  for `system`, `_to_message_params()` (one branch per role so mypy narrows each
+  literal). Caller impact checked: 33 literal roles, all `user` / `assistant`; the
+  13 `complete()` calls sit outside any `try`, so the `ValueError` is never retried;
+  `complete()` signature unchanged (`Raises: ValueError` added). Red: 4
+  `DID NOT RAISE ValueError` (`system`, `tool`, `User`, `""`); the multi-turn
+  transport test green at once. mypy now rejects `"summarised"` / `"asistant"`
+  (mutation).
+- F51 (`6ed84a3`, `test:`): truncation WARNING over both stop reasons (model,
+  `stop_reason`, output tokens, `max_tokens`, no content); green at once
+  (characterization); swapping the two token fields is caught.
+- F52 (`llm/` part) + F56 (`c3d11f2`, `docs:`): module docstrings name their entry
+  points; retry loops cover invalid output (unparsable JSON; org generation also
+  schema and structure) and call the client outside the `try`. Checked: the
+  interview, team setup and reconfiguration loops catch `JSONDecodeError` only;
+  `interview.py:150` wraps, does not retry.
+- No change needed in ADR 0007, ADR 0012, ARCHITECTURE §2 / §8 (ADR 0007's
+  `**kwargs` sketch belongs to the historical Option C). Routed: `ValueError` on an
+  unknown role → ADR 0012 §1, in the 4b.2 amendment.
+- Commits split non-interactively (intermediate versions of the test file), each
+  one checked with lint, mypy and tests.
+- `anthropic_client.py` 159 → 188 lines, `errors.py` 75 → 81, `types.py` 16 → 18,
+  `test_llm_anthropic.py` 342 → 562; 593 tests; lint, typecheck green.
+
+**Stopped at:** block 10 done. Next: block 11 (docs and 4.7 closure — F7, F21, F35,
+F57; F49 with the ADR 0010 amendment shown to the user before writing; check the §3
+model sketches against blocks 7–8 and report before acting; walkthrough "4.7 —
+Fixes"; Decisions log: A–I and every decision of blocks 1–10; 4.7 checked;
+Milestone columns: ask the user; "Stopped at" on the PR).
 
 ---
 
@@ -1587,12 +1636,12 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F35 (Q7): ARCHITECTURE §9 "How prompts are loaded" rewritten — fixed system
     prompts + agent context in a message, no templating today, `PromptLoader(Path)`,
     `load_all()` not called at startup yet
-  - F37: 2-3 `AnthropicClient` tests through `httpx2.MockTransport` with the real SDK
+  - ✅ (block 10, `a65a60f`) F37: 2-3 `AnthropicClient` tests through `httpx2.MockTransport` with the real SDK
     (success with the JSON body actually sent, refusal, mid-stream error event) —
     **before F36**. F71: assert the `Authorization: Bearer` header carries the key,
     and `monkeypatch.delenv` `ANTHROPIC_BASE_URL` / `ANTHROPIC_CUSTOM_HEADERS` (read
     by the SDK even with an explicit key)
-  - F36 (Q8): typed `messages.stream(...)` call (no `dict[str, Any]`), `omit` for
+  - ✅ (block 10, `dee49e4`) F36 (Q8): typed `messages.stream(...)` call (no `dict[str, Any]`), `omit` for
     `system`, `_to_message_params()` converting the neutral messages to
     `MessageParam` and rejecting unknown roles, tests
   - ✅ (block 1, `2928e43`) F40: router tests check the `api_key` passed to `AnthropicClient` (direct key
@@ -1608,16 +1657,16 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     0010 accordingly
   - F57 (with F21 / F7): ARCHITECTURE §3 `Message` sketch — `"generator"` sentinel,
     no `"system"`
-  - F51: test asserting the truncation WARNING (model, `stop_reason`, tokens, no
-    content)
-  - F52: `llm/types.py`, `llm/errors.py`, `router/router.py` module docstrings name
+  - ✅ (block 10, `6ed84a3`) F51: test asserting the truncation WARNING (model,
+    `stop_reason`, tokens, no content)
+  - ✅ F52: `llm/types.py`, `llm/errors.py`, `router/router.py` module docstrings name
     their entry points; `router.py` says who builds the router — `router.py` ✅
-    (block 1, `2928e43`); `llm/` in block 10
+    (block 1, `2928e43`); `llm/` ✅ (block 10, `c3d11f2`)
   - F53, F54, F55: docstrings fixed — skills also created by team setup /
     reconfiguration (`agents/models.py`); org generation sets `PAUSED` at creation
     (`AgentStatus`); the interview also updates a loaded row in place
     (`db/tables.py`) — F55 ✅ (block 6, `6ed7c78`); F53, F54 ✅ (block 7, `eadf81a`)
-  - F56: `llm/errors.py` docstring — retry loops cover invalid output (JSON, schema,
+  - ✅ (block 10, `c3d11f2`) F56: `llm/errors.py` docstring — retry loops cover invalid output (JSON, schema,
     structure), never LLM errors (ADR 0012 sentence: step 4b.2)
   - ✅ (block 9, `62adcb9`) F58 (with F33 / F44): `_parse_frontmatter` docstring matches the rewritten parser
     (empty frontmatter block)
@@ -1650,7 +1699,9 @@ Branch: `feat/structured-outputs` — before steps 6, 7, 8, which adopt it
 - [ ] 4b.2 **Amend** ADR 0012 (the neutral contract gains a method); the same
   amendment corrects §4 "their retry loops only catch `JSONDecodeError`" — org
   generation also retries on schema / structure errors, LLM errors are still never
-  retried (step 4.5, F56)
+  retried (step 4.5, F56); and §1 states that `complete()` raises `ValueError` for a
+  message role other than `user` / `assistant`, before any request (step 4.7, block
+  10)
 - [ ] 4b.3 TDD: Anthropic implementation (`output_config.format` /
   `messages.parse()`), same `stop_reason` handling and typed errors as `complete()`;
   same typed SDK call (no `dict[str, Any]`) and transport-level tests as `complete()`
@@ -1983,6 +2034,13 @@ Branch: `feat/llm-router` — full `/feature` workflow
   format; every writer uses UTC today and no query orders by a date → normalize to
   UTC (shared type with an `AfterValidator`) or sort on parsed values at the first
   `ORDER BY` on a date column, or with the **FastAPI app** (client-supplied dates)
+- The SDK reads `ANTHROPIC_BASE_URL` and `ANTHROPIC_CUSTOM_HEADERS` even when
+  `AnthropicClient` passes an explicit key: a custom `Authorization` header silently
+  replaces the key validated by `LLMRouter`, and the base URL sends every request,
+  key included, to another host (checked, `anthropic` 2.1.0). Legitimate uses exist
+  (proxy, gateway) → decide with the app's environment loading (with F43):
+  neutralize, allow, or log them at startup → **FastAPI app** feature (step 4.7,
+  block 10)
 
 ---
 
