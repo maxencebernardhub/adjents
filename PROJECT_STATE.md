@@ -1,6 +1,6 @@
 # Project State
 
-> Updated: 2026-11-10 | Branch: refactor/walkthrough-foundations | Milestone: v0.1 — MVP
+> Updated: 2026-11-12 | Branch: refactor/walkthrough-foundations | Milestone: v0.1 — MVP
 
 ---
 
@@ -1025,6 +1025,87 @@ TDD — F60 and F66 first).
 
 ---
 
+## Last session — 2026-11-12 (step 4, part 2 — 4.7)
+
+Step 4.7 — fix the walkthrough, 4.5 and 4.6 findings with TDD (branch
+`refactor/walkthrough-foundations`), one block at a time, one commit (or more) per
+block, then a `docs(state)` commit so a `/clear` is possible between blocks. Item
+list: Next steps → Step 4 → 4.7.
+
+### Plan (validated 2026-11-12)
+
+| # | Block | Items | Status |
+| --- | --- | --- | --- |
+| 1 | Router: API key | F60, F40, F52 (router) | ✅ `2928e43` |
+| 2 | mypy on `tests/` | F2, F65 | — |
+| 3 | `db/convert.py` → `db/convert/` package | F19, F26 (imports) | — |
+| 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | — |
+| 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | — |
+| 6 | Tables | F17, F18, F23, F25, F55 | — |
+| 7 | `AgentSpec` constraints | F3, F72, F53, F54 | — |
+| 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | — |
+| 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | — |
+| 10 | LLM client | F37 + F71, then F36; F51, F52, F56 | — |
+| 11 | Docs | F7, F21, F35, F49 (ADR 0010 amendment), F57; walkthrough "4.7 — Fixes" | — |
+
+Order: F60 first (🟠, isolated); F2 next so mypy checks every test written
+afterwards; the `convert` split and the engine factories before F66, whose tests
+depend on them; F25 (block 6) removes the `test_db_tables` roundtrips, so F66 only
+concerns the `convert` tests. Docstring findings (F52–F56, F58) go with their
+module's block.
+
+Decisions taken with the plan (to copy into the Decisions log at the end of 4.7):
+
+- A — `httpx2` declared as a dev dependency (block 10): `MockTransport` is imported
+  from it; already in the lock as a transitive dependency of `anthropic`.
+- B — `convert` tests split flat, one file per module: `test_db_convert_<domain>.py`.
+- C — `visual_character` stays `str`, checked by an `AfterValidator` against a
+  `frozenset` reference constant (no type change for callers; JSON Schema exposure
+  decided in 4b). `Literal` rejected: it would force a change in
+  `org_generation.py:284` (step 7 module).
+- D — `WorkHours`: start == end rejected (ambiguous), `24:00` rejected; type defined
+  in `agents/models.py`, imported by `generator/models.py`.
+- E — explicit engine factories: `make_engine(url)`, `make_session_factory(engine)`
+  (`expire_on_commit=False`), `create_db_and_tables(engine)`, `get_session(factory)`
+  (signatures change; no caller). The FastAPI app wires them.
+- F — `hide_input_in_errors=True` on every domain model, not only the 5 listed.
+- G — `BlockingQuestion`: `answered=True` ⇔ `answer` and `answered_at` not None;
+  `answered=False` ⇔ both None.
+- H — the environment template sets `DATABASE_URL=sqlite:///./data/adjents.db`
+  (relative to the working directory), which would override the anchored default
+  of F13 → handled in block 4. Also: `.gitignore` gets `data/*.db` (only
+  `data/chroma/` and `data/outputs/` are ignored today).
+- I — F2 as block 2, before F66.
+
+Checked while planning: `mypy --strict adjents/ tests/` → 53 errors in 5 files (40
+`unused-ignore`, 13 `comparison-overlap`); no naive `datetime(` in `adjents/`,
+`tests/`, `scripts/`; the direct table writers of steps 6–8 (`SkillTable`,
+`MessageTable`) pass every field, so removing table defaults (F17) breaks none;
+removing `default=None` on nullable columns probably changes nothing in SQL (to
+check in block 6).
+
+### Block 1 — router (`2928e43`)
+
+- F60: the key is stripped whatever its source; blank once stripped, or holding a
+  space, control or non-ASCII character → `LLMConfigError` naming no value, no
+  `__cause__`. A whitespace-only direct key is rejected, not a fallback to the
+  environment (`None` / `""` still fall back). Stricter than the 4.6
+  recommendation (non-ASCII rejected too): probe against a local HTTP server — only
+  a newline in the key makes the HTTP layer quote it in the exception chain; `é`,
+  `\x7f`, `\xa0`, `\x01` are sent to the server as is (an auth failure, no leak).
+- F40: tests patch `AnthropicClient` and assert the `api_key` each client receives
+  (environment key, direct over environment, `""` falls back); tautological
+  assertions removed. These 3 tests passed at once (characterization); the 10 F60
+  tests were red first.
+- F52 (router part): module docstring names its entry points and its builders (the
+  smoke scripts; orchestrators get the client injected).
+- `router.py` 67 → 92 lines; 292 tests; lint, typecheck green.
+
+**Stopped at:** block 1 done. Next: block 2 (F2 — `mypy --strict adjents/ tests/`
+in Makefile + CI, the 53 test errors; F65).
+
+---
+
 ## Next steps
 
 Each step follows the same cycle unless stated otherwise: create the branch from an
@@ -1253,7 +1334,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F36 (Q8): typed `messages.stream(...)` call (no `dict[str, Any]`), `omit` for
     `system`, `_to_message_params()` converting the neutral messages to
     `MessageParam` and rejecting unknown roles, tests
-  - F40: router tests check the `api_key` passed to `AnthropicClient` (direct key
+  - ✅ (block 1, `2928e43`) F40: router tests check the `api_key` passed to `AnthropicClient` (direct key
     over environment, environment key used). **F60 (🟠, first)**: the router
     `strip()`s the key and raises `LLMConfigError` (naming no value) when it is
     empty or contains whitespace / control characters — today such a key leaks in
@@ -1269,7 +1350,8 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F51: test asserting the truncation WARNING (model, `stop_reason`, tokens, no
     content)
   - F52: `llm/types.py`, `llm/errors.py`, `router/router.py` module docstrings name
-    their entry points; `router.py` says who builds the router
+    their entry points; `router.py` says who builds the router — `router.py` ✅
+    (block 1, `2928e43`); `llm/` in block 10
   - F53, F54, F55: docstrings fixed — skills also created by team setup /
     reconfiguration (`agents/models.py`); org generation sets `PAUSED` at creation
     (`AgentStatus`); the interview also updates a loaded row in place
