@@ -1037,7 +1037,7 @@ list: Next steps → Step 4 → 4.7.
 | # | Block | Items | Status |
 | --- | --- | --- | --- |
 | 1 | Router: API key | F60, F40, F52 (router) | ✅ `2928e43` |
-| 2 | mypy on `tests/` | F2, F65 | — |
+| 2 | mypy on `tests/` | F2, F65 | ✅ `4eb0d2a`, `e0508ff` |
 | 3 | `db/convert.py` → `db/convert/` package | F19, F26 (imports) | — |
 | 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | — |
 | 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | — |
@@ -1101,8 +1101,34 @@ check in block 6).
   smoke scripts; orchestrators get the client injected).
 - `router.py` 67 → 92 lines; 292 tests; lint, typecheck green.
 
-**Stopped at:** block 1 done. Next: block 2 (F2 — `mypy --strict adjents/ tests/`
-in Makefile + CI, the 53 test errors; F65).
+### Block 2 — mypy on `tests/` (`4eb0d2a`, `e0508ff`)
+
+- Red: `mypy --strict adjents/ tests/` → 53 errors in 5 files, as counted in Q2.
+- F2, `4eb0d2a` (`test:`): 27 `# type: ignore[call-overload]` on
+  `session.exec(select(...))` in `test_team_setup_orchestrator.py` and 13
+  `# type: ignore[assignment]` on `session = async_session` in
+  `test_generator_org_generation.py` removed (unused: SQLModel now types the call);
+  13 `StrEnum == "str"` comparisons → `.value == "str"` (`test_models_agents`,
+  `test_models_projects`, `test_team_setup_models`). The `[arg-type]` ignores on
+  `GeneratorOrgGeneration(...)` are used (mocked client) and stay. No logic change.
+- F65 (same commit): effort tests parametrized with `get_args(Effort)` and typed
+  `Effort` (ignore removed); `test_complete_sends_no_sampling_prefill_or_tool_parameters`
+  renamed `…_no_sampling_or_tool_parameters`, docstring corrected (only a *forced*
+  `tool_choice` returns a 400, per the `claude-api` skill).
+- F2, `e0508ff` (`chore:`): Makefile and CI run `mypy --strict adjents/ tests/` (53
+  source files, clean).
+- Tooling note: an Edit `replace_all` with an empty replacement merged each line
+  with the next (syntax errors caught by mypy); both files restored from HEAD and
+  the comments removed with an end-anchored `sed` (diff checked: 27 and 13 lines
+  changed one for one).
+- Noted for later steps: 7.2 (`async_session: object` indirection in
+  `test_generator_org_generation.py`), 8.6 (`scripts/` not checked by mypy).
+- 292 tests; lint, typecheck green.
+
+**Stopped at:** block 2 done. Next: block 3 (F19 — split `db/convert.py` into a
+`db/convert/` package per domain, re-exported from `__init__`; split
+`test_db_convert.py` into flat `test_db_convert_<domain>.py` files (decision B);
+F26 module-level imports).
 
 ---
 
@@ -1255,7 +1281,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   findings (details in `docs/walkthroughs/step-4-foundations.md`):
   - F1: tests based on `model_copy(update=...)` (no validation) rebuilt through
     `model_validate`
-  - F2 (Q2): `mypy --strict adjents/ tests/` in Makefile + CI; all 53 test errors
+  - ✅ (block 2, `4eb0d2a`, `e0508ff`) F2 (Q2): `mypy --strict adjents/ tests/` in Makefile + CI; all 53 test errors
     fixed, including the tests of steps 7 and 8
   - F3 (Q1): `AgentSpec` invariants in the model (`Field` constraints / validators)
     and reference constants in `agents/models.py`; callers rewired in 7.2 / 8.3.
@@ -1368,7 +1394,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F62: `hide_input_in_errors=True` on the models carrying user content
     (`BusinessContext`, `Message`, `Memory`, `AgentSpec`, `BlockingQuestion`); test
     that `str(exc)` holds no input value (the `InterviewError` message: step 6.3)
-  - F65 (with F2): effort tests parametrized with `get_args(Effort)` and typed
+  - ✅ (block 2, `4eb0d2a`) F65 (with F2): effort tests parametrized with `get_args(Effort)` and typed
     `Effort` (the `# type: ignore` goes); rename
     `test_complete_sends_no_sampling_prefill_or_tool_parameters` (no prefill check)
 
@@ -1462,7 +1488,10 @@ Branch: `refactor/walkthrough-org-generation`
   (draft: `models.py`, `validation.py`, `parsing.py`, `generator.py`); split the test
   file accordingly (one test file per module); `_validate_structure` returns all
   violations, not only the first (fewer paid retries); use the `AgentSpec` reference
-  constants from `agents/models.py` (step 4.7, Q1) instead of local literals
+  constants from `agents/models.py` (step 4.7, Q1) instead of local literals. In the
+  split test files, type the `async_session` fixture parameter as `AsyncSession`
+  instead of `object` + `session = async_session` + `assert isinstance(...)` (13
+  tests; seen in step 4.7, block 2)
 - [ ] 7.3 Prompt audit for Claude 5.5 (e.g. `/claude-api prompt-audit`); adopt
   structured outputs (step 4b); the
   Generator assigns each agent's reasoning tier (step 5.1b) — prompt + validation.
@@ -1515,7 +1544,9 @@ Branch: `refactor/walkthrough-team-setup`
   into `scripts/_common.py` (created in step 3); `smoke_team_setup.py` is 635 lines.
   Add a shared handler for SDK transport errors (`anthropic.APIConnectionError`,
   `APIStatusError`) printing a short diagnostic instead of the full traceback, which
-  can hold the API key (step 4.6 code review, F60)
+  can hold the API key (step 4.6 code review, F60). Add `scripts/` to the mypy
+  `--strict` run in Makefile + CI (step 4.7 covers `adjents/` and `tests/` only —
+  Q2) and fix what it reports
 - [ ] 8.7 Docstrings + comments
 - [ ] 8.8 New code review on the result (LLM calls against ADR 0012), fixes
 
