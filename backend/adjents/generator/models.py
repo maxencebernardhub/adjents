@@ -18,6 +18,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from adjents.agents.models import WorkHours
+
 
 class BusinessContext(BaseModel):
     """What the Generator Agent learned about the user's business.
@@ -47,8 +49,10 @@ class BusinessContext(BaseModel):
         existing_tools: Tools, software or platforms the user mentioned.
         autonomy_preference: What requires human validation vs what agents may
             handle alone.
-        work_hours: The user's available hours, e.g. "18:00-23:00"; None if always
-            available or not discussed.
+        work_hours: The user's available hours (`WorkHours`, the type of
+            `AgentSpec.work_hours`, since org generation copies this value into
+            every agent), e.g. "18:00-23:00"; None if always available or not
+            discussed.
         additional_context: Anything relevant that fits no other field; None if
             nothing remains.
         created_at: Creation time.
@@ -69,6 +73,6 @@ class BusinessContext(BaseModel):
     financial_goals: str | None
     existing_tools: list[str]
     autonomy_preference: str
-    work_hours: str | None
+    work_hours: WorkHours | None
     additional_context: str | None
     created_at: datetime

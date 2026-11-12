@@ -1,7 +1,7 @@
 """Tests for db.tables: the 12 tables, their schema against the domain, constraints."""
 
 import types
-from typing import Any, get_args
+from typing import Any, Union, get_args, get_origin
 
 import pytest
 from pydantic import BaseModel
@@ -186,9 +186,11 @@ def _required_columns() -> list[tuple[type[SQLModel], str]]:
 
 
 def _is_nullable(annotation: Any) -> bool:
-    return isinstance(annotation, types.UnionType) and type(None) in get_args(
-        annotation
-    )
+    # `str | None` is a `types.UnionType`, but `Annotated[str, ...] | None` (e.g.
+    # `WorkHours | None`) is a `typing.Union`.
+    return get_origin(annotation) in (Union, types.UnionType) and type(
+        None
+    ) in get_args(annotation)
 
 
 # --- Tables ---

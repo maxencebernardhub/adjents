@@ -55,6 +55,21 @@ def test_business_context_no_work_hours() -> None:
     assert bc.work_hours is None
 
 
+def test_business_context_accepts_overnight_work_hours() -> None:
+    """Same `WorkHours` type as `AgentSpec`: an end before the start crosses
+    midnight."""
+    assert make_bc(work_hours="22:00-02:00").work_hours == "22:00-02:00"
+
+
+@pytest.mark.parametrize("value", ["evenings", "99:99-25:00", "18:00-18:00"])
+def test_business_context_rejects_invalid_work_hours(value: str) -> None:
+    """Rejected at the interview, not only later when org generation copies the
+    value into every agent."""
+    with pytest.raises(ValidationError) as exc_info:
+        make_bc(work_hours=value)
+    assert {error["loc"][0] for error in exc_info.value.errors()} == {"work_hours"}
+
+
 def test_business_context_no_financial_goals() -> None:
     bc = make_bc(financial_goals=None)
     assert bc.financial_goals is None

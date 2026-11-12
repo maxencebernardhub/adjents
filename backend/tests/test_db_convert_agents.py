@@ -48,7 +48,7 @@ async def test_agent_spec_roundtrip(async_session: AsyncSession) -> None:
         scheduler_interval_seconds=900,
         work_hours="09:00-18:00",
         is_paused=False,
-        visual_character="accountant_f",
+        visual_character="character_analyst",
         created_at=datetime(2026, 5, 20, tzinfo=UTC),
     )
     row = agent_spec_to_table(spec)
@@ -77,7 +77,7 @@ async def test_agent_spec_nullable_fields_roundtrip(
         scheduler_interval_seconds=300,
         work_hours=None,
         is_paused=False,
-        visual_character="coo_m",
+        visual_character="character_suit",
         created_at=datetime(2026, 5, 20, tzinfo=UTC),
     )
     row = agent_spec_to_table(spec)

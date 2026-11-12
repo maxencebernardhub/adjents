@@ -4,15 +4,18 @@ BlockingQuestion."""
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from adjents.agents.models import (
+    VISUAL_CHARACTERS,
     AgentSpec,
     AgentState,
     AgentStatus,
     BlockingQuestion,
     Skill,
+    WorkHours,
 )
+from adjents.generator.org_generation import VALID_VISUAL_CHARACTERS
 
 
 def make_skill() -> Skill:
@@ -40,7 +43,7 @@ def make_agent_spec() -> AgentSpec:
         scheduler_interval_seconds=900,
         work_hours="09:00-18:00",
         is_paused=False,
-        visual_character="accountant_f",
+        visual_character="character_analyst",
         created_at=datetime(2026, 5, 20, tzinfo=UTC),
     )
 
@@ -111,7 +114,7 @@ def test_agent_spec_coo_no_parent_no_domain() -> None:
         scheduler_interval_seconds=300,
         work_hours=None,
         is_paused=False,
-        visual_character="coo_m",
+        visual_character="character_suit",
         created_at=datetime(2026, 5, 20, tzinfo=UTC),
     )
     assert spec.parent_id is None
@@ -142,9 +145,9 @@ def test_agent_spec_missing_required_field() -> None:
             responsibilities=[],
             skill_ids=[],
             escalation_rules=[],
-            scheduler_interval_seconds=60,
+            scheduler_interval_seconds=300,
             is_paused=False,
-            visual_character="x",
+            visual_character="character_suit",
             created_at=datetime(2026, 5, 20, tzinfo=UTC),
         )
 
@@ -161,12 +164,131 @@ def test_agent_spec_invalid_level_type() -> None:
             responsibilities=[],
             skill_ids=[],
             escalation_rules=[],
-            scheduler_interval_seconds=60,
+            scheduler_interval_seconds=300,
             work_hours=None,
             is_paused=False,
-            visual_character="x",
+            visual_character="character_suit",
             created_at=datetime(2026, 5, 20, tzinfo=UTC),
         )
+
+
+# --- AgentSpec constraints ---
+
+
+def _validate_spec(**overrides: object) -> AgentSpec:
+    """Build an AgentSpec through validation (`model_copy(update=...)` skips it)."""
+    return AgentSpec.model_validate({**make_agent_spec().model_dump(), **overrides})
+
+
+def _error_fields(exc_info: pytest.ExceptionInfo[ValidationError]) -> set[object]:
+    return {error["loc"][0] for error in exc_info.value.errors()}
+
+
+@pytest.mark.parametrize("level", [0, 1, 7])
+def test_agent_spec_accepts_any_non_negative_level(level: int) -> None:
+    """Depth has no upper bound (VISION.md §3.1)."""
+    assert _validate_spec(level=level).level == level
+
+
+def test_agent_spec_rejects_negative_level() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_spec(level=-1)
+    assert _error_fields(exc_info) == {"level"}
+
+
+@pytest.mark.parametrize("interval", [300, 3600])
+def test_agent_spec_accepts_interval_bounds(interval: int) -> None:
+    spec = _validate_spec(scheduler_interval_seconds=interval)
+    assert spec.scheduler_interval_seconds == interval
+
+
+@pytest.mark.parametrize("interval", [0, 299, 3601])
+def test_agent_spec_rejects_interval_out_of_bounds(interval: int) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_spec(scheduler_interval_seconds=interval)
+    assert _error_fields(exc_info) == {"scheduler_interval_seconds"}
+
+
+def test_visual_characters_reference_set() -> None:
+    """The sprite identifiers the workspace can render."""
+    assert VISUAL_CHARACTERS == {
+        "character_suit",
+        "character_creative",
+        "character_tech",
+        "character_support",
+        "character_analyst",
+        "character_sales",
+    }
+
+
+def test_visual_characters_match_org_generation_copy() -> None:
+    """Org generation keeps its own copy until it is rewired to the reference set;
+    remove this test then."""
+    assert VISUAL_CHARACTERS == VALID_VISUAL_CHARACTERS
+
+
+@pytest.mark.parametrize("character", sorted(VISUAL_CHARACTERS))
+def test_agent_spec_accepts_every_reference_visual_character(character: str) -> None:
+    assert _validate_spec(visual_character=character).visual_character == character
+
+
+@pytest.mark.parametrize(
+    "character", ["accountant_f", "", "Character_suit", " character_suit"]
+)
+def test_agent_spec_rejects_unknown_visual_character(character: str) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_spec(visual_character=character)
+    assert _error_fields(exc_info) == {"visual_character"}
+
+
+def test_agent_spec_accepts_overnight_work_hours() -> None:
+    assert _validate_spec(work_hours="22:00-02:00").work_hours == "22:00-02:00"
+
+
+def test_agent_spec_rejects_invalid_work_hours() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_spec(work_hours="99:99-25:00")
+    assert _error_fields(exc_info) == {"work_hours"}
+
+
+# --- WorkHours ---
+
+_work_hours: TypeAdapter[str] = TypeAdapter(WorkHours)
+
+
+@pytest.mark.parametrize(
+    "value", ["09:00-18:00", "00:00-23:59", "18:00-23:00", "08:30-12:45"]
+)
+def test_work_hours_accepts_a_same_day_window(value: str) -> None:
+    assert _work_hours.validate_python(value) == value
+
+
+@pytest.mark.parametrize("value", ["22:00-02:00", "23:59-00:00", "18:00-09:00"])
+def test_work_hours_accepts_an_end_before_the_start(value: str) -> None:
+    """An end before the start is a window crossing midnight."""
+    assert _work_hours.validate_python(value) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "09:00-09:00",  # start == end: empty or full day, ambiguous
+        "24:00-02:00",
+        "09:00-24:00",
+        "99:99-25:00",
+        "09:60-18:00",
+        "9:00-18:00",
+        "09:00 - 18:00",
+        "09:00-18:00\n",
+        "09h00-18h00",
+        "٠٩:٠٠-١٨:٠٠",  # Arabic-Indic digits
+        "evenings",
+        "",
+    ],
+)
+def test_work_hours_rejects(value: str) -> None:
+    with pytest.raises(ValidationError):
+        _work_hours.validate_python(value)
 
 
 # --- AgentState ---
