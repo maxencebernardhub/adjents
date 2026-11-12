@@ -142,12 +142,6 @@ async def test_complete_passes_system_prompt(mock_anthropic: MagicMock) -> None:
     assert _sent_kwargs(mock_anthropic)["system"] == "You are a helpful assistant."
 
 
-async def test_complete_without_system_omits_key(mock_anthropic: MagicMock) -> None:
-    client = AnthropicClient(api_key="test-key", model=_MODEL)
-    await client.complete(_MESSAGES, effort="medium")
-    assert "system" not in _sent_kwargs(mock_anthropic)
-
-
 @pytest.mark.parametrize("effort", get_args(Effort))
 async def test_complete_passes_effort_in_output_config(
     mock_anthropic: MagicMock, effort: Effort
@@ -473,6 +467,38 @@ async def test_transport_sends_expected_body_and_auth_header(
     if system is not None:
         expected["system"] = system
     assert json.loads(request.content) == expected
+
+
+async def test_transport_sends_user_and_assistant_turns_in_order(
+    transport: _Transport,
+) -> None:
+    messages = [
+        {"role": "user", "content": "Hello."},
+        {"role": "assistant", "content": "Hi."},
+        {"role": "user", "content": "Plan my week."},
+    ]
+    client = AnthropicClient(api_key="test-key", model=_MODEL)
+    await client.complete(messages, effort="medium")
+    sent = json.loads(transport.requests[0].content)
+    assert sent["messages"] == messages
+
+
+@pytest.mark.parametrize("role", ["system", "tool", "User", ""])
+async def test_complete_rejects_unknown_role_before_any_request(
+    transport: _Transport, role: str
+) -> None:
+    """The neutral contract has two roles; the system prompt goes through `system`.
+    The error names the role, never the content (user data)."""
+    messages = [
+        {"role": "user", "content": "Hello."},
+        {"role": role, "content": "private business detail"},
+    ]
+    client = AnthropicClient(api_key="test-key", model=_MODEL)
+    with pytest.raises(ValueError, match="role") as exc_info:
+        await client.complete(messages, effort="medium")
+    assert repr(role) in str(exc_info.value)
+    assert "private business detail" not in str(exc_info.value)
+    assert transport.requests == []
 
 
 async def test_transport_refusal_is_read_from_the_stream(
