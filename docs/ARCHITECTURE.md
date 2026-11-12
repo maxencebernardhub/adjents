@@ -26,7 +26,7 @@ adjents/
 │   │   ├── projects/            # Project and task management (v0.2)
 │   │   ├── deliverables/        # Deliverable writing and indexing
 │   │   ├── api/                 # FastAPI routes + WebSocket handlers
-│   │   ├── db/                  # SQLite models + migrations (via SQLModel)
+│   │   ├── db/                  # SQLModel tables, domain ↔ row conversion, async engine
 │   │   ├── utils/               # Shared helpers (agent_context, etc.)
 │   │   ├── errors.py            # Application-level error classes (TeamSetupError, etc.)
 │   │   └── prompts/             # All prompts as .md files, loaded at runtime
@@ -130,6 +130,18 @@ for all data contracts means one system handles validation, serialization, and t
 safety across the entire backend. No impedance mismatch between the API layer and
 the business logic layer.
 
+**Conventions shared by every domain model.** The sketches below show fields and
+types; each module's docstrings are the reference.
+
+- Every field is required, nullable ones included: a missing key is a validation
+  error, never a silent `None`.
+- Datetimes are `AwareDatetime`: a value without a timezone is rejected.
+- Validation errors never include the input value (`hide_input_in_errors=True`):
+  fields hold the user's business data.
+- Field constraints define what valid data is, for every writer. They apply when a
+  model is built or validated: assignment is not validated, and code that writes
+  table rows directly bypasses them.
+
 ### Agents are data, not code
 
 **What "agents as code" would mean**: one Python class per agent, each with its own
@@ -154,9 +166,11 @@ that is untested, untyped and unreviewed.
 - one `AgentState` row — runtime status;
 - one namespaced Chroma collection — its memory (§7).
 
-Prompts are shared templates per agent type (`prompts/agent/`, `prompts/coo/`),
-rendered with the agent's fields. Behavior comes from one generic agent loop (§5)
-that reads these records and feeds them to the LLM.
+System prompts are fixed texts shared per agent type (`prompts/agent/`,
+`prompts/coo/`): no agent field is substituted into them. An agent's own data — its
+fields, its skills, its direct reports — reaches the LLM in a message built from its
+records (`utils/agent_context.py`, §9). Behavior comes from one generic agent loop
+(§5) that reads these records and feeds them to the LLM.
 
 **Impact**:
 
@@ -187,27 +201,34 @@ serializable and stored in SQLite.
 class AgentSpec(BaseModel):
     id: str                          # UUID
     name: str                        # e.g. "Finance Lead", "Alex"
-    level: int                       # 0 = COO, 1 = N-1, 2 = N-2, etc. No upper bound.
+    level: int                       # ≥ 0: 0 = COO, 1 = N-1, 2 = N-2, etc. No upper bound.
     parent_id: str | None            # None for the COO
     domain: str | None               # "Sales", "Finance", "HR"... None for COO
     role_description: str
     responsibilities: list[str]
     skill_ids: list[str]             # v0.1: descriptive only; v0.2: executable
     escalation_rules: list[str]
-    scheduler_interval_seconds: int  # Autonomous wake-up interval
-    work_hours: str | None           # e.g. "09:00-18:00"; None = always active
+    scheduler_interval_seconds: int  # Autonomous wake-up interval, 300–3600 s
+    work_hours: WorkHours | None     # e.g. "09:00-18:00"; None = always active
     is_paused: bool                  # User-controlled pause
-    visual_character: str            # Sprite identifier for the PixiJS workspace
-    created_at: datetime
+    visual_character: str            # One of VISUAL_CHARACTERS (sprite identifiers)
+    created_at: AwareDatetime
 ```
 
-`level` is an integer with no upper bound.
+`level` is an integer of at least 0, with no upper bound.
 
-`visual_character` must be one of a predefined set of valid sprite identifiers (e.g.
-`"character_suit"`, `"character_creative"`, `"character_tech"`...). The full list is
-injected into `prompts/generator/org_generation.md` so the LLM picks semantically from
-available sprites. A free string would point to a non-existent sprite file and break
-the PixiJS workspace. The user can change their agents' sprites during the post-generation
+`work_hours` is a daily active window `"HH:MM-HH:MM"`, times from 00:00 to 23:59
+(`WorkHours`, a type shared with `BusinessContext`). An end before the start crosses
+midnight: `"22:00-02:00"` runs from 22:00 to 02:00 the next day. Equal start and end
+are rejected: they could mean an empty window or the whole day, and "always active"
+is spelled `None`.
+
+`visual_character` must be one of the sprite identifiers of `VISUAL_CHARACTERS`
+(`agents/models.py`; e.g. `"character_suit"`, `"character_creative"`,
+`"character_tech"`...): `AgentSpec` rejects any other value. The same list is written
+in `prompts/generator/org_generation.md` so the LLM picks semantically from available
+sprites. A free string would point to a non-existent sprite file and break the PixiJS
+workspace. The user can change their agents' sprites during the post-generation
 validation conversation (ADR 0006). We deliberately avoided
 `Literal["N0", "N1", "N2"]` because the VISION specifies no hard cap on hierarchy
 depth — a complex business may have N-3 or deeper agents.
@@ -239,7 +260,7 @@ class AgentState(BaseModel):
     status: AgentStatus
     current_task_summary: str | None
     meeting_with: list[str]          # Agent IDs if in a meeting
-    updated_at: datetime
+    updated_at: AwareDatetime
 ```
 
 `AgentState` is stored in SQLite and broadcast via WebSocket on every change. The
@@ -275,13 +296,17 @@ The unit of all inter-agent and agent-user communication.
 ```python
 class Message(BaseModel):
     id: str
-    from_agent: str                  # agent_id, "user", or "system"
-    to_agent: str                    # agent_id or "user"
+    from_agent: str                  # agent_id, "user", or "generator"
+    to_agent: str                    # agent_id, "user", or "generator"
     content: str
-    metadata: dict[str, Any]         # routing context, tracing
+    metadata: dict[str, JsonValue]   # routing context, tracing; no NaN or infinity
     parent_message_id: str | None    # for threading
-    created_at: datetime
+    created_at: AwareDatetime
 ```
+
+`"user"` and `"generator"` are sentinels: neither the user nor the Generator Agent has
+an `AgentSpec`. `metadata` holds JSON values only (no datetime, tuple or set), since
+it is stored as JSON text and sent as JSON.
 
 ### `Memory`
 
@@ -292,10 +317,43 @@ class Memory(BaseModel):
     id: str
     agent_id: str | None   # None = global knowledge base entry
     content: str
-    metadata: dict[str, Any]
-    created_at: datetime
+    metadata: dict[str, JsonValue]  # as in Message: JSON values only, no NaN
+    created_at: AwareDatetime
     # embedding is managed by Chroma — not stored here
 ```
+
+### `BusinessContext`
+
+What the Generator Agent learned about the user's business: the bridge between the
+two halves of the Generator Agent. `GeneratorInterview` builds it once the interview
+is complete, from the JSON returned by the `generator/extract_business_context`
+prompt, and persists it; `GeneratorOrgGeneration` reads it to generate the org.
+
+```python
+class BusinessContext(BaseModel):
+    id: str
+    conversation_id: str                     # the interview Conversation
+    business_name: str | None
+    founder_name: str
+    language: str                            # ISO 639-1, e.g. "fr"
+    core_activity: str
+    legal_status: str | None
+    target_clients: list[str]
+    domains_with_human_coverage: list[str]   # excluded from agent generation
+    domains_to_staff: list[str]              # where agents are created
+    tasks_to_delegate: list[str]
+    tasks_user_keeps: list[str]
+    financial_goals: str | None
+    existing_tools: list[str]
+    autonomy_preference: str                 # what requires human validation
+    work_hours: WorkHours | None             # same type as AgentSpec.work_hours
+    additional_context: str | None
+    created_at: AwareDatetime
+```
+
+The org generation prompt makes the business context `work_hours` the default of
+every agent, hence the shared `WorkHours` type: a value the interview accepts is valid
+for an agent too.
 
 ### `ValidationSession`
 
@@ -306,8 +364,8 @@ all agents go live (`_go_live()`).
 ```python
 class ValidationSession(BaseModel):
     id: str
-    started_at: datetime
-    completed_at: datetime | None
+    started_at: AwareDatetime
+    completed_at: AwareDatetime | None
     skipped: bool
 ```
 
@@ -333,7 +391,7 @@ class AgentValidationRecord(BaseModel):
     navigation_stack: list[str]        # DFS stack; [] = subtree exhausted
     conversation_ids: list[str]        # all conversations in this record
     visited_agent_ids: list[str]       # agents whose conversations are closed
-    validated_at: datetime | None
+    validated_at: AwareDatetime | None
 ```
 
 `navigation_stack`, `conversation_ids`, and `visited_agent_ids` are JSON-serialized
@@ -350,7 +408,7 @@ class Conversation(BaseModel):
     id: str
     participant_agents: list[str]
     message_ids: list[str]           # ordered
-    started_at: datetime
+    started_at: AwareDatetime
 ```
 
 ### `Project` *(v0.2)*
@@ -368,11 +426,11 @@ class Project(BaseModel):
     title: str
     objective: str
     deliverable_descriptions: list[str]
-    deadline: datetime | None
+    deadline: AwareDatetime | None
     lead_agent_id: str
     contributor_agent_ids: list[str]
     status: ProjectStatus
-    created_at: datetime
+    created_at: AwareDatetime
 ```
 
 ### `Deliverable`
@@ -384,7 +442,7 @@ class Deliverable(BaseModel):
     project_id: str | None           # None if produced during daily operations
     title: str
     file_path: str                   # Relative path under data/outputs/
-    created_at: datetime
+    created_at: AwareDatetime
 ```
 
 ### `BlockingQuestion`
@@ -401,9 +459,12 @@ class BlockingQuestion(BaseModel):
     context: str | None    # why the agent needs this decision
     answered: bool
     answer: str | None
-    created_at: datetime
-    answered_at: datetime | None
+    created_at: AwareDatetime
+    answered_at: AwareDatetime | None
 ```
+
+The answer fields are consistent, checked at validation: an answered question has an
+`answer` and an `answered_at`, an unanswered one has neither.
 
 ---
 
@@ -423,7 +484,7 @@ re-exported by the package) translate between the two layers.
 
 - SQLModel `table=True` imposes field annotations (`primary_key`, `__tablename__`)
   that are persistence details and do not belong in the domain model.
-- `list[str]` and `dict[str, Any]` fields are not natively supported by SQLite.
+- `list[str]` and `dict[str, JsonValue]` fields are not natively supported by SQLite.
   They are JSON-serialized in the DB layer only — the domain model stays clean.
 - FastAPI uses the Pydantic models as response schemas. Mixing SQLModel internals
   into those models would bleed persistence details into the API contract.
@@ -433,11 +494,14 @@ re-exported by the package) translate between the two layers.
 Two types of fields require explicit serialization in the `db/` layer:
 
 **`datetime` fields** are stored as ISO 8601 strings (`datetime.isoformat()`) in all
-table classes. `datetime.fromisoformat()` (Python 3.11+, timezone-aware) restores them
-on read. This avoids SQLAlchemy's default behavior of stripping timezone info from
-SQLite `DATETIME` columns.
+table classes and read back with `datetime.fromisoformat()`: the roundtrip keeps the
+value and its UTC offset. `fromisoformat()` itself returns a naive datetime for a
+string without an offset; since the domain models accept only timezone-aware
+datetimes, such a row fails when it is converted back (`*_from_table()`). Strings
+are used because a SQLAlchemy `DateTime` column on SQLite drops the offset, even
+with `timezone=True`.
 
-**`list[str]` and `dict[str, Any]` fields** are stored as JSON text (`json.dumps` /
+**`list[str]` and `dict[str, JsonValue]` fields** are stored as JSON text (`json.dumps` /
 `json.loads`). The table column name differs from the Pydantic field name when needed
 to avoid SQLAlchemy reserved names (e.g. `metadata` → `metadata_json`).
 
@@ -449,6 +513,7 @@ to avoid SQLAlchemy reserved names (e.g. `metadata` → `metadata_json`).
 | `Message` | `metadata` | `TEXT` (JSON object) |
 | `Memory` | `metadata` | `TEXT` (JSON object) |
 | `Conversation` | `participant_agents`, `message_ids` | `TEXT` (JSON array) |
+| `BusinessContext` | `target_clients`, `domains_with_human_coverage`, `domains_to_staff`, `tasks_to_delegate`, `tasks_user_keeps`, `existing_tools` | `TEXT` (JSON array) |
 | `Project` | `deliverable_descriptions`, `contributor_agent_ids` | `TEXT` (JSON array) |
 | `AgentValidationRecord` | `navigation_stack`, `conversation_ids`, `visited_agent_ids` | `TEXT` (JSON array) |
 
@@ -507,12 +572,12 @@ wait, and the recipient answers when it can.
 ```python
 class Message(BaseModel):
     id: str
-    from_agent: str                  # agent_id, "user", or "system"
-    to_agent: str                    # agent_id or "user"
+    from_agent: str                  # agent_id, "user", or "generator"
+    to_agent: str                    # agent_id, "user", or "generator"
     content: str
-    metadata: dict[str, Any]         # routing context, tracing
+    metadata: dict[str, JsonValue]   # routing context, tracing
     parent_message_id: str | None    # threading: the message this one answers
-    created_at: datetime
+    created_at: AwareDatetime
 ```
 
 Pydantic validates every message at runtime (a malformed message fails loudly at
@@ -877,7 +942,7 @@ not require a code change, a review, or a deployment. Prompts as `.md` files are
 
 - Editable without touching Python
 - Version-controlled in git (diffs are readable)
-- Testable in isolation (load the file, render with test variables, inspect output)
+- Testable in isolation (load the file, inspect its frontmatter and body)
 - Reviewable as documentation by non-engineers
 
 ### Naming convention
@@ -892,7 +957,13 @@ prompts/agent/think_and_act.md
 prompts/agent/memory_summary.md
 ```
 
-### YAML frontmatter
+### Frontmatter
+
+A prompt file may start with a block of flat `key: value` lines between two `---`
+lines. The syntax looks like YAML but is parsed by hand (no YAML library): a value
+made of digits becomes an `int`, a value in double quotes loses its quotes, and
+anything else stays a string (`[1, 2]` is the string `"[1, 2]"`). An indented line
+or a `- item` line is an error.
 
 ```yaml
 ---
@@ -908,20 +979,33 @@ removed is decided in step 10.
 
 ### How prompts are loaded
 
-`PromptLoader` reads all `.md` files at server startup and caches them in memory.
-At runtime, any module can request a rendered prompt:
+`PromptLoader` takes the prompts directory and caches each prompt on its first
+`get()`. `load_all()` reads every `.md` file at once, but nothing calls it yet: the
+FastAPI app will call it at startup, so that runtime `get()` calls only hit the
+cache. The caller builds one loader (today the smoke scripts) and injects it into
+the orchestrators:
 
 ```python
-loader = PromptLoader("backend/adjents/prompts/")
+loader = PromptLoader(Path("backend/adjents/prompts"))
 
-# Raw content
-prompt = loader.get("generator/interview")
-
-# With template variables substituted
-prompt = loader.render("agent/think_and_act",
-                       agent_name="Alex",
-                       responsibilities=["Handle invoicing", ...])
+prompt = loader.get("generator/interview")      # LoadedPrompt, cached
+prompt.content                                   # the body, used as the system prompt
+prompt.frontmatter.get("kickoff_message")        # parsed keys: str or int values
 ```
+
+**System prompts are fixed texts: there is no templating.** An agent's own data — its
+fields, its skills, its direct reports — reaches the LLM in a user message built from
+its records (`utils/agent_context.py`), and org generation receives the business
+context the same way. A system prompt identical for every agent also keeps one shared
+prefix for prompt caching. If a prompt ever needs variables, the mechanism is decided
+with the agent loop.
+
+**The frontmatter parser is strict.** A block opened by a first line `---` must be
+closed by a second `---` line; every non-blank line inside must be `key: value`, with
+an identifier key and no duplicate. Anything else raises `ValueError` naming the file
+and the line number, so a malformed file fails at load time instead of reaching the
+LLM with its frontmatter. A key that resolves outside the prompts directory (`..`,
+absolute path) is rejected.
 
 ### When prompts are loaded
 
