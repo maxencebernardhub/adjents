@@ -9,15 +9,15 @@ Place in the flow: domain / API layer (ADR 0002). Today only the Generator inter
 and reconfiguration write message rows directly through `db/tables.py`. Persistence
 goes through `db/convert/messaging.py`.
 
+Datetimes must carry a timezone; validation errors never include the input value
+(message content is user and LLM text).
+
 Entry points: `Message`, `Conversation`.
 
 Related ADRs: 0002 (domain models vs tables).
 """
 
-from datetime import datetime
-from typing import Any
-
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, ConfigDict, JsonValue
 
 
 class Message(BaseModel):
@@ -34,19 +34,23 @@ class Message(BaseModel):
             in ARCHITECTURE §3, used by no code yet).
         to_agent: Recipient: an agent id or a sentinel, as for `from_agent`.
         content: Message text.
-        metadata: Free-form routing and tracing data.
+        metadata: Free-form routing and tracing data, JSON values only: no
+            datetime, tuple or set, no NaN or infinity (it is stored as JSON text
+            and sent as JSON).
         parent_message_id: Id of the message this one replies to, for threading;
             None for a thread start.
         created_at: Send time.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True, allow_inf_nan=False)
+
     id: str
     from_agent: str
     to_agent: str
     content: str
-    metadata: dict[str, Any]
+    metadata: dict[str, JsonValue]
     parent_message_id: str | None
-    created_at: datetime
+    created_at: AwareDatetime
 
 
 class Conversation(BaseModel):
@@ -60,7 +64,9 @@ class Conversation(BaseModel):
         started_at: Start time.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     participant_agents: list[str]
     message_ids: list[str]
-    started_at: datetime
+    started_at: AwareDatetime

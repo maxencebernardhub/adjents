@@ -1,10 +1,11 @@
 """Tests for agents domain models: AgentSpec, AgentState, AgentStatus, Skill,
 BlockingQuestion."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from adjents.agents.models import (
     VISUAL_CHARACTERS,
@@ -48,6 +49,30 @@ def make_agent_spec() -> AgentSpec:
     )
 
 
+def make_agent_state() -> AgentState:
+    return AgentState(
+        agent_id="agent-001",
+        status=AgentStatus.WORKING,
+        current_task_summary="Drafting Q1 invoice batch.",
+        meeting_with=["agent-002"],
+        updated_at=datetime(2026, 5, 20, tzinfo=UTC),
+    )
+
+
+def make_blocking_question() -> BlockingQuestion:
+    """An answered question, so that every field holds a value."""
+    return BlockingQuestion(
+        id="bq-001",
+        agent_id="agent-001",
+        question="Confirm budget increase for Q3 campaign?",
+        context="Current budget is $300.",
+        answered=True,
+        answer="Yes, approved up to $500.",
+        created_at=datetime(2026, 5, 20, 9, 0, tzinfo=UTC),
+        answered_at=datetime(2026, 5, 20, 9, 30, tzinfo=UTC),
+    )
+
+
 # --- AgentStatus ---
 
 
@@ -77,17 +102,6 @@ def test_skill_inputs_outputs_are_lists() -> None:
     skill = make_skill()
     assert isinstance(skill.inputs, list)
     assert isinstance(skill.outputs, list)
-
-
-def test_skill_missing_required_field() -> None:
-    with pytest.raises(ValidationError):
-        Skill(  # type: ignore[call-arg]
-            id="s",
-            description="x",
-            inputs=[],
-            outputs=[],
-            requires_human_review=False,
-        )
 
 
 # --- AgentSpec ---
@@ -122,13 +136,6 @@ def test_agent_spec_coo_no_parent_no_domain() -> None:
     assert spec.level == 0
 
 
-def test_agent_spec_level_no_cap() -> None:
-    """Hierarchy depth has no hard limit per VISION.md §3.1."""
-    spec = make_agent_spec()
-    spec_deep = spec.model_copy(update={"id": "deep", "level": 5})
-    assert spec_deep.level == 5
-
-
 def test_agent_spec_serialisation_roundtrip() -> None:
     spec = make_agent_spec()
     data = spec.model_dump()
@@ -136,40 +143,11 @@ def test_agent_spec_serialisation_roundtrip() -> None:
     assert restored == spec
 
 
-def test_agent_spec_missing_required_field() -> None:
-    with pytest.raises(ValidationError):
-        AgentSpec(  # type: ignore[call-arg]
-            id="x",
-            level=1,
-            role_description="x",
-            responsibilities=[],
-            skill_ids=[],
-            escalation_rules=[],
-            scheduler_interval_seconds=300,
-            is_paused=False,
-            visual_character="character_suit",
-            created_at=datetime(2026, 5, 20, tzinfo=UTC),
-        )
-
-
 def test_agent_spec_invalid_level_type() -> None:
-    with pytest.raises(ValidationError):
-        AgentSpec(
-            id="x",
-            name="x",
-            level="N-1",  # type: ignore[arg-type]
-            parent_id=None,
-            domain=None,
-            role_description="x",
-            responsibilities=[],
-            skill_ids=[],
-            escalation_rules=[],
-            scheduler_interval_seconds=300,
-            work_hours=None,
-            is_paused=False,
-            visual_character="character_suit",
-            created_at=datetime(2026, 5, 20, tzinfo=UTC),
-        )
+    """The string "N-1" is not an int (lax mode would accept "5")."""
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_spec(level="N-1")
+    assert _error_fields(exc_info) == {"level"}
 
 
 # --- AgentSpec constraints ---
@@ -329,7 +307,7 @@ def test_agent_state_in_meeting() -> None:
 
 
 def test_agent_state_invalid_status() -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         AgentState(
             agent_id="agent-001",
             status="flying",  # type: ignore[arg-type]
@@ -337,6 +315,7 @@ def test_agent_state_invalid_status() -> None:
             meeting_with=[],
             updated_at=datetime(2026, 5, 20, tzinfo=UTC),
         )
+    assert _error_fields(exc_info) == {"status"}
 
 
 def test_agent_state_serialisation_roundtrip() -> None:
@@ -402,19 +381,6 @@ def test_blocking_question_no_context() -> None:
     assert bq.context is None
 
 
-def test_blocking_question_missing_required_field() -> None:
-    with pytest.raises(ValidationError):
-        BlockingQuestion(  # type: ignore[call-arg]
-            id="bq-x",
-            agent_id="agent-001",
-            context=None,
-            answered=False,
-            answer=None,
-            created_at=datetime(2026, 5, 20, tzinfo=UTC),
-            answered_at=None,
-        )
-
-
 def test_blocking_question_serialisation_roundtrip() -> None:
     bq = BlockingQuestion(
         id="bq-001",
@@ -428,3 +394,128 @@ def test_blocking_question_serialisation_roundtrip() -> None:
     )
     restored = BlockingQuestion.model_validate(bq.model_dump())
     assert restored == bq
+
+
+_ANSWERED_AT = datetime(2026, 5, 20, 9, 30, tzinfo=UTC)
+
+
+def _validate_answer_state(
+    answered: bool, answer: str | None, answered_at: datetime | None
+) -> BlockingQuestion:
+    return BlockingQuestion.model_validate(
+        {
+            **make_blocking_question().model_dump(),
+            "answered": answered,
+            "answer": answer,
+            "answered_at": answered_at,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("answered", "answer", "answered_at"),
+    [(True, "Yes.", _ANSWERED_AT), (False, None, None)],
+)
+def test_blocking_question_accepts_consistent_answer_state(
+    answered: bool, answer: str | None, answered_at: datetime | None
+) -> None:
+    question = _validate_answer_state(answered, answer, answered_at)
+    assert (question.answered, question.answer) == (answered, answer)
+
+
+@pytest.mark.parametrize(
+    ("answered", "answer", "answered_at"),
+    [
+        (True, None, None),
+        (True, "Yes.", None),
+        (True, None, _ANSWERED_AT),
+        (False, "Yes.", None),
+        (False, None, _ANSWERED_AT),
+        (False, "Yes.", _ANSWERED_AT),
+    ],
+)
+def test_blocking_question_rejects_inconsistent_answer_state(
+    answered: bool, answer: str | None, answered_at: datetime | None
+) -> None:
+    """Answered ⇔ `answer` and `answered_at` both set; unanswered ⇔ both None."""
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_answer_state(answered, answer, answered_at)
+    assert [error["loc"] for error in exc_info.value.errors()] == [()]
+
+
+# --- Contracts shared by every model of the module ---
+
+_FACTORIES: list[Callable[[], BaseModel]] = [
+    make_skill,
+    make_agent_spec,
+    make_agent_state,
+    make_blocking_question,
+]
+_FIELDS = [
+    (factory, field) for factory in _FACTORIES for field in type(factory()).model_fields
+]
+_DATETIME_FIELDS = [
+    (make_agent_spec, "created_at"),
+    (make_agent_state, "updated_at"),
+    (make_blocking_question, "created_at"),
+    (make_blocking_question, "answered_at"),
+]
+# A free-text field per model, where user or LLM content lands.
+_CONTENT_FIELDS = [
+    (make_skill, "description"),
+    (make_agent_spec, "role_description"),
+    (make_agent_state, "current_task_summary"),
+    (make_blocking_question, "question"),
+]
+
+
+def _id(value: object) -> str:
+    return getattr(value, "__name__", str(value)).removeprefix("make_")
+
+
+@pytest.mark.parametrize(("factory", "field"), _FIELDS, ids=_id)
+def test_every_field_is_required(factory: Callable[[], BaseModel], field: str) -> None:
+    """Nullable fields included: a JSON that omits a key fails instead of
+    defaulting to None."""
+    data = factory().model_dump()
+    del data[field]
+    with pytest.raises(ValidationError) as exc_info:
+        type(factory()).model_validate(data)
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        ((field,), "missing")
+    ]
+
+
+@pytest.mark.parametrize("factory", _FACTORIES, ids=_id)
+def test_json_mode_roundtrip(factory: Callable[[], BaseModel]) -> None:
+    """The path of the API and the WebSocket: through JSON text, not Python
+    objects."""
+    model = factory()
+    assert type(model).model_validate_json(model.model_dump_json()) == model
+
+
+@pytest.mark.parametrize(("factory", "field"), _DATETIME_FIELDS, ids=_id)
+def test_naive_datetime_is_rejected(
+    factory: Callable[[], BaseModel], field: str
+) -> None:
+    data = {**factory().model_dump(), field: datetime(2026, 5, 20, 10, 0)}
+    with pytest.raises(ValidationError) as exc_info:
+        type(factory()).model_validate(data)
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        ((field,), "timezone_aware")
+    ]
+
+
+@pytest.mark.parametrize(("factory", "field"), _CONTENT_FIELDS, ids=_id)
+def test_validation_error_hides_the_input(
+    factory: Callable[[], BaseModel], field: str
+) -> None:
+    """Error messages reach exceptions and logs: they name the field, never the
+    value."""
+    data = {**factory().model_dump(), field: ["SECRET-INPUT"]}
+    with pytest.raises(ValidationError) as exc_info:
+        type(factory()).model_validate(data)
+    assert field in str(exc_info.value)
+    assert "SECRET-INPUT" not in str(exc_info.value)

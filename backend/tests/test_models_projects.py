@@ -45,46 +45,61 @@ def test_project_valid() -> None:
     assert len(proj.deliverable_descriptions) == 2
 
 
+def _validate_project(**overrides: object) -> Project:
+    """Build a Project through validation (`model_copy(update=...)` skips it)."""
+    return Project.model_validate({**make_project().model_dump(), **overrides})
+
+
 def test_project_no_deadline() -> None:
     """deadline is optional — daily-ops projects may have no fixed end date."""
-    proj = make_project()
-    proj_no_deadline = proj.model_copy(update={"deadline": None})
-    assert proj_no_deadline.deadline is None
+    assert _validate_project(deadline=None).deadline is None
 
 
 def test_project_no_contributors() -> None:
-    proj = make_project()
-    solo = proj.model_copy(update={"contributor_agent_ids": []})
+    solo = _validate_project(contributor_agent_ids=[])
     assert solo.contributor_agent_ids == []
 
 
 def test_project_invalid_status() -> None:
-    with pytest.raises(ValidationError):
-        Project(
-            id="x",
-            title="x",
-            objective="x",
-            deliverable_descriptions=[],
-            deadline=None,
-            lead_agent_id="agent-001",
-            contributor_agent_ids=[],
-            status="running",  # type: ignore[arg-type]
-            created_at=datetime(2026, 5, 20, tzinfo=UTC),
-        )
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_project(status="running")
+    assert [error["loc"] for error in exc_info.value.errors()] == [("status",)]
 
 
-def test_project_missing_required_field() -> None:
-    with pytest.raises(ValidationError):
-        Project(  # type: ignore[call-arg]
-            id="x",
-            title="x",
-            deliverable_descriptions=[],
-            deadline=None,
-            lead_agent_id="agent-001",
-            contributor_agent_ids=[],
-            status=ProjectStatus.ACTIVE,
-            created_at=datetime(2026, 5, 20, tzinfo=UTC),
-        )
+@pytest.mark.parametrize("field", list(Project.model_fields))
+def test_project_every_field_is_required(field: str) -> None:
+    """Nullable fields included: a JSON that omits a key fails instead of
+    defaulting to None."""
+    data = make_project().model_dump()
+    del data[field]
+    with pytest.raises(ValidationError) as exc_info:
+        Project.model_validate(data)
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        ((field,), "missing")
+    ]
+
+
+def test_project_json_mode_roundtrip() -> None:
+    proj = make_project()
+    assert Project.model_validate_json(proj.model_dump_json()) == proj
+
+
+@pytest.mark.parametrize("field", ["deadline", "created_at"])
+def test_project_rejects_naive_datetime(field: str) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_project(**{field: datetime(2026, 5, 20, 10, 0)})
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        ((field,), "timezone_aware")
+    ]
+
+
+def test_project_validation_error_hides_the_input() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        _validate_project(objective=["SECRET-INPUT"])
+    assert "objective" in str(exc_info.value)
+    assert "SECRET-INPUT" not in str(exc_info.value)
 
 
 def test_project_serialisation_roundtrip() -> None:

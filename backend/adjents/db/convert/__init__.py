@@ -5,9 +5,13 @@ The only bridge between the two layers of ADR 0002: each domain model has an
 (row → domain). Every function maps every field explicitly, by name. The shared
 conventions:
 
-- `list[str]` and `dict[str, Any]` fields: `json.dumps()` / `json.loads()`.
+- `list[str]` and `dict[str, JsonValue]` fields: `json.dumps()` / `json.loads()`;
+  the `metadata` dumps pass `allow_nan=False`, so NaN or infinity added after
+  validation raises a `ValueError` instead of writing invalid JSON.
 - `datetime` fields: `isoformat()` / `datetime.fromisoformat()`. The roundtrip
-  keeps the value and its UTC offset; a naive datetime comes back naive.
+  keeps the value and its UTC offset. The domain models accept only
+  timezone-aware datetimes, so a naive date stored in a row fails at
+  `*_from_table()`.
 - `StrEnum` fields: stored as their string value with `str()`, rebuilt with the
   enum constructor.
 - `metadata` fields: stored in the `metadata_json` column.

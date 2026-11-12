@@ -14,9 +14,7 @@ Entry points: `BusinessContext`.
 Related ADRs: 0002 (domain models vs tables).
 """
 
-from datetime import datetime
-
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 from adjents.agents.models import WorkHours
 
@@ -27,7 +25,9 @@ class BusinessContext(BaseModel):
     Every field is required, including the nullable ones: an extraction JSON that
     omits a key fails validation instead of defaulting to None. Unknown keys are
     ignored (Pydantic's default). Field meanings follow the extraction prompt
-    (`prompts/generator/extract_business_context.md`).
+    (`prompts/generator/extract_business_context.md`). `created_at` must carry a
+    timezone; validation errors never include the input value (the fields hold the
+    user's business data).
 
     Attributes:
         id: UUID.
@@ -58,6 +58,8 @@ class BusinessContext(BaseModel):
         created_at: Creation time.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     conversation_id: str
     business_name: str | None
@@ -75,4 +77,4 @@ class BusinessContext(BaseModel):
     autonomy_preference: str
     work_hours: WorkHours | None
     additional_context: str | None
-    created_at: datetime
+    created_at: AwareDatetime

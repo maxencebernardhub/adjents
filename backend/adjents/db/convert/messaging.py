@@ -28,7 +28,8 @@ def message_to_table(msg: Message) -> MessageTable:
         from_agent=msg.from_agent,
         to_agent=msg.to_agent,
         content=msg.content,
-        metadata_json=json.dumps(msg.metadata),
+        # The model rejects NaN / infinity at validation, not on assignment.
+        metadata_json=json.dumps(msg.metadata, allow_nan=False),
         parent_message_id=msg.parent_message_id,
         created_at=msg.created_at.isoformat(),
     )

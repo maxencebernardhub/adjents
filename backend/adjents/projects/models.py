@@ -14,10 +14,9 @@ Related ADRs: 0002 (domain models vs tables), 0004 (precedent for defining an
 entity ahead of its feature).
 """
 
-from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 
 class ProjectStatus(StrEnum):
@@ -37,6 +36,9 @@ class ProjectStatus(StrEnum):
 class Project(BaseModel):
     """A time-bound objective with a lead agent and contributors.
 
+    Datetimes must carry a timezone; validation errors never include the input
+    value.
+
     Attributes:
         id: UUID.
         title: Short name.
@@ -49,12 +51,14 @@ class Project(BaseModel):
         created_at: Creation time.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     title: str
     objective: str
     deliverable_descriptions: list[str]
-    deadline: datetime | None
+    deadline: AwareDatetime | None
     lead_agent_id: str
     contributor_agent_ids: list[str]
     status: ProjectStatus
-    created_at: datetime
+    created_at: AwareDatetime

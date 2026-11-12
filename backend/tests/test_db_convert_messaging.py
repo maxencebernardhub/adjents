@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime
 
+import pytest
+from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from adjents.db.convert.messaging import (
@@ -63,6 +65,38 @@ async def test_message_with_parent_roundtrip(async_session: AsyncSession) -> Non
     assert stored is not None
     restored = message_from_table(stored)
     assert restored.parent_message_id == "msg-001"
+
+
+def _message() -> Message:
+    return Message(
+        id="msg-001",
+        from_agent="agent-001",
+        to_agent="user",
+        content="Invoice batch ready for review.",
+        metadata={},
+        parent_message_id=None,
+        created_at=datetime(2026, 5, 20, 10, 0, tzinfo=UTC),
+    )
+
+
+def test_message_to_table_rejects_nan_added_after_validation() -> None:
+    """The model rejects NaN at construction, not on assignment: the dump refuses
+    to write `NaN`, which is not JSON."""
+    msg = _message()
+    msg.metadata["score"] = float("nan")
+    with pytest.raises(ValueError, match="not JSON compliant"):
+        message_to_table(msg)
+
+
+def test_message_from_table_rejects_a_naive_date() -> None:
+    row = message_to_table(_message())
+    row.created_at = "2026-05-20T10:00:00"
+    with pytest.raises(ValidationError) as exc_info:
+        message_from_table(row)
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        (("created_at",), "timezone_aware")
+    ]
 
 
 # --- Conversation ---

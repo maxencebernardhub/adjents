@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from adjents.db.convert.memory import memory_from_table, memory_to_table
@@ -43,3 +44,18 @@ async def test_memory_global_kb_roundtrip(async_session: AsyncSession) -> None:
     assert stored is not None
     restored = memory_from_table(stored)
     assert restored.agent_id is None
+
+
+def test_memory_to_table_rejects_nan_added_after_validation() -> None:
+    """The model rejects NaN at construction, not on assignment: the dump refuses
+    to write `NaN`, which is not JSON."""
+    mem = Memory(
+        id="mem-003",
+        agent_id=None,
+        content="x",
+        metadata={},
+        created_at=datetime(2026, 5, 20, tzinfo=UTC),
+    )
+    mem.metadata["score"] = float("inf")
+    with pytest.raises(ValueError, match="not JSON compliant"):
+        memory_to_table(mem)

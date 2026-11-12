@@ -16,6 +16,11 @@ Valid-data rules live here as field constraints and reference constants
 (`VISUAL_CHARACTERS`, `SCHEDULER_INTERVAL_MIN` / `_MAX`, the `WorkHours` type, also
 used by `generator/models.py`), so every writer shares one definition.
 
+As in every domain model, datetimes must carry a timezone (`AwareDatetime`), and
+validation errors name the field and the error type, never the input value
+(`hide_input_in_errors`): the models carry user and LLM content, and their errors
+reach exception messages and logs.
+
 Entry points: `AgentSpec`, `AgentState`, `AgentStatus`, `Skill`,
 `BlockingQuestion`, `WorkHours`, `VISUAL_CHARACTERS`, `SCHEDULER_INTERVAL_MIN`,
 `SCHEDULER_INTERVAL_MAX`.
@@ -24,11 +29,18 @@ Related ADRs: 0002 (domain models vs tables), 0004 (BlockingQuestion), 0006 (age
 start paused), 0009 (direct reconfiguration), 0010 (agents are data, not code).
 """
 
-from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import AfterValidator, BaseModel, Field, StringConstraints
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 # Sprite identifiers the PixiJS workspace can render.
 VISUAL_CHARACTERS: frozenset[str] = frozenset(
@@ -120,6 +132,8 @@ class Skill(BaseModel):
         requires_human_review: Whether the user must review the skill's output.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     name: str
     description: str
@@ -163,6 +177,8 @@ class AgentSpec(BaseModel):
         created_at: Creation time.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     name: str
     level: Annotated[int, Field(ge=0)]
@@ -178,7 +194,7 @@ class AgentSpec(BaseModel):
     work_hours: WorkHours | None
     is_paused: bool
     visual_character: Annotated[str, AfterValidator(_check_visual_character)]
-    created_at: datetime
+    created_at: AwareDatetime
 
 
 class AgentState(BaseModel):
@@ -196,11 +212,13 @@ class AgentState(BaseModel):
         updated_at: Time of the last change.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     agent_id: str
     status: AgentStatus
     current_task_summary: str | None
     meeting_with: list[str]
-    updated_at: datetime
+    updated_at: AwareDatetime
 
 
 class BlockingQuestion(BaseModel):
@@ -209,6 +227,10 @@ class BlockingQuestion(BaseModel):
     A persisted entity, so that a pending question survives a restart and the
     `question_id` of a `blocking_answer` WebSocket message can be matched to it
     (ADR 0004).
+
+    The answer fields are consistent: an answered question has an `answer` and an
+    `answered_at`, an unanswered one has neither (checked at validation, like the
+    field types; `answered` stays a field, as in ADR 0004).
 
     Attributes:
         id: UUID; the `question_id` of the WebSocket protocol.
@@ -221,11 +243,23 @@ class BlockingQuestion(BaseModel):
         answered_at: Time of the answer; None while unanswered.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     agent_id: str
     question: str
     context: str | None
     answered: bool
     answer: str | None
-    created_at: datetime
-    answered_at: datetime | None
+    created_at: AwareDatetime
+    answered_at: AwareDatetime | None
+
+    @model_validator(mode="after")
+    def _check_answer_state(self) -> Self:
+        has_answer = (self.answer is not None, self.answered_at is not None)
+        if has_answer != (self.answered, self.answered):
+            raise ValueError(
+                "answered=True requires answer and answered_at; "
+                "answered=False requires both to be None"
+            )
+        return self

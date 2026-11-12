@@ -23,7 +23,8 @@ def memory_to_table(mem: Memory) -> MemoryTable:
         id=mem.id,
         agent_id=mem.agent_id,
         content=mem.content,
-        metadata_json=json.dumps(mem.metadata),
+        # The model rejects NaN / infinity at validation, not on assignment.
+        metadata_json=json.dumps(mem.metadata, allow_nan=False),
         created_at=mem.created_at.isoformat(),
     )
 

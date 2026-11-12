@@ -12,27 +12,28 @@ Entry points: `Memory`.
 Related ADRs: 0002 (domain models vs tables).
 """
 
-from datetime import datetime
-from typing import Any
-
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, ConfigDict, JsonValue
 
 
 class Memory(BaseModel):
     """One entry of an agent's memory or of the global knowledge base.
 
-    The embedding is computed and stored by Chroma, not held here.
+    The embedding is computed and stored by Chroma, not held here. Validation
+    errors never include the input value (memories hold business data).
 
     Attributes:
         id: UUID.
         agent_id: Id of the owning agent; None for a global knowledge base entry.
         content: The remembered text.
-        metadata: Free-form data stored alongside the entry.
-        created_at: Creation time.
+        metadata: Free-form data stored alongside the entry, JSON values only: no
+            datetime, tuple or set, no NaN or infinity (it is stored as JSON text).
+        created_at: Creation time; must carry a timezone.
     """
+
+    model_config = ConfigDict(hide_input_in_errors=True, allow_inf_nan=False)
 
     id: str
     agent_id: str | None
     content: str
-    metadata: dict[str, Any]
-    created_at: datetime
+    metadata: dict[str, JsonValue]
+    created_at: AwareDatetime

@@ -12,13 +12,14 @@ Entry points: `Deliverable`.
 Related ADRs: 0002 (domain models vs tables).
 """
 
-from datetime import datetime
-
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 
 class Deliverable(BaseModel):
     """A file produced by an agent, during daily work or for a project.
+
+    `created_at` must carry a timezone; validation errors never include the input
+    value.
 
     Attributes:
         id: UUID.
@@ -30,9 +31,11 @@ class Deliverable(BaseModel):
         created_at: Creation time.
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     agent_id: str
     project_id: str | None
     title: str
     file_path: str
-    created_at: datetime
+    created_at: AwareDatetime
