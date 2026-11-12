@@ -455,21 +455,28 @@ to avoid SQLAlchemy reserved names (e.g. `metadata` → `metadata_json`).
 ### DB engine setup
 
 `backend/adjents/db/engine.py` owns the SQLite engine and session lifecycle.
-Sessions are **async** throughout — see ADR 0003.
+Sessions are **async** throughout — see ADR 0003. Nothing is created at import
+time: the module provides factories, and the caller passes their results on.
 
 ```python
-engine = create_async_engine("sqlite+aiosqlite:///./data/adjents.db")
+def make_engine(url: str | None = None) -> AsyncEngine: ...
+    # url, else DATABASE_URL, else <repository root>/data/adjents.db (absolute,
+    # independent of the working directory); "sqlite://" → "sqlite+aiosqlite://"
 
-async def create_db_and_tables() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+def make_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]: ...
+    # expire_on_commit=False: objects stay readable after a commit
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSession(engine) as session:
-        yield session
+async def create_db_and_tables(engine: AsyncEngine) -> None: ...
+    # creates the database directory, then the missing tables (never alters one)
+
+async def get_session(
+    factory: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncSession]: ...
 ```
 
-Called once at FastAPI startup (`lifespan`). All agent loops and API routes use
+The FastAPI app (not written yet) builds the engine and the session factory once
+at startup (`lifespan`) and calls `create_db_and_tables()`; `get_session()` is the
+session dependency of routes. All agent loops and API routes use
 `await session.exec(...)` — no synchronous DB calls anywhere in the codebase.
 
 ---
