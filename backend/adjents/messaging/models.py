@@ -29,9 +29,8 @@ class Message(BaseModel):
 
     Attributes:
         id: UUID.
-        from_agent: Sender: an agent id, or a sentinel — "user", "generator"
-            (the Generator Agent, which has no `AgentSpec`) or "system" (planned
-            in ARCHITECTURE §3, used by no code yet).
+        from_agent: Sender: an agent id, or a sentinel — "user" or "generator"
+            (the Generator Agent, which has no `AgentSpec`).
         to_agent: Recipient: an agent id or a sentinel, as for `from_agent`.
         content: Message text.
         metadata: Free-form routing and tracing data, JSON values only: no
