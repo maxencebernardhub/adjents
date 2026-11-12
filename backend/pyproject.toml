@@ -25,6 +25,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.17.1",
     "mypy>=2.4.0",
+    "httpx2>=2.16.0",
 ]
 
 [build-system]

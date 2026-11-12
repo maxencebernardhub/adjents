@@ -1,10 +1,18 @@
-"""Tests for llm.anthropic_client: AnthropicClient (streaming implementation)."""
+"""Tests for llm.anthropic_client: AnthropicClient (streaming implementation).
 
+Two levels: above the SDK (mocked SDK client: parameters, stop reasons, logs) and
+at the transport level (real SDK over a mocked HTTP transport: JSON body and
+headers actually sent, stream parsing, SDK errors).
+"""
+
+import json
 import logging
 from collections.abc import Generator
 from typing import get_args
 from unittest.mock import MagicMock, patch
 
+import anthropic
+import httpx2
 import pytest
 from anthropic.types import (
     ContentBlock,
@@ -340,3 +348,164 @@ async def test_complete_thinking_logger_is_silent_by_default(
     with caplog.at_level(logging.INFO):
         await client.complete(_MESSAGES, effort="medium")
     assert "Plan the org." not in caplog.text
+
+
+# --- Transport level: real SDK, mocked HTTP ---
+
+
+def _sse(*events: dict[str, object]) -> bytes:
+    """Encode events as the Server-Sent Events body of a streamed Messages call."""
+    return b"".join(
+        f"event: {event['type']}\ndata: {json.dumps(event)}\n\n".encode()
+        for event in events
+    )
+
+
+def _opening_events(text: str) -> list[dict[str, object]]:
+    """`message_start`, then one complete text block."""
+    return [
+        {
+            "type": "message_start",
+            "message": {
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": _MODEL,
+                "content": [],
+                "stop_reason": None,
+                "stop_sequence": None,
+                "usage": {"input_tokens": 10, "output_tokens": 1},
+            },
+        },
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": text},
+        },
+        {"type": "content_block_stop", "index": 0},
+    ]
+
+
+def _closing_events(
+    stop_reason: str, stop_details: dict[str, object] | None = None
+) -> list[dict[str, object]]:
+    """`message_delta` carrying the stop reason, then `message_stop`."""
+    return [
+        {
+            "type": "message_delta",
+            "delta": {
+                "stop_reason": stop_reason,
+                "stop_sequence": None,
+                "stop_details": stop_details,
+            },
+            "usage": {"output_tokens": 42},
+        },
+        {"type": "message_stop"},
+    ]
+
+
+class _Transport:
+    """Mocked HTTP layer: records every request, answers 200 with an SSE body."""
+
+    def __init__(self) -> None:
+        self.requests: list[httpx2.Request] = []
+        self.body = _sse(*_opening_events(_REPLY), *_closing_events("end_turn"))
+
+    def handle(self, request: httpx2.Request) -> httpx2.Response:
+        self.requests.append(request)
+        return httpx2.Response(
+            200, headers={"content-type": "text/event-stream"}, content=self.body
+        )
+
+
+@pytest.fixture
+def transport(monkeypatch: pytest.MonkeyPatch) -> _Transport:
+    """`AnthropicClient` builds the real SDK client, over a mocked transport.
+
+    The SDK reads `ANTHROPIC_BASE_URL` and `ANTHROPIC_CUSTOM_HEADERS` even when a key
+    is passed, and a custom `Authorization` header replaces the key: both are
+    removed so a developer's shell cannot change the request under test.
+    """
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_CUSTOM_HEADERS", raising=False)
+    recorder = _Transport()
+    real_sdk_client = anthropic.AsyncAnthropic
+
+    def build_sdk_client(*, api_key: str) -> anthropic.AsyncAnthropic:
+        http_client = httpx2.AsyncClient(
+            transport=httpx2.MockTransport(recorder.handle)
+        )
+        return real_sdk_client(api_key=api_key, http_client=http_client)
+
+    monkeypatch.setattr(
+        "adjents.llm.anthropic_client.anthropic.AsyncAnthropic", build_sdk_client
+    )
+    return recorder
+
+
+@pytest.mark.parametrize("system", [None, "Be brief."])
+async def test_transport_sends_expected_body_and_auth_header(
+    transport: _Transport, system: str | None
+) -> None:
+    """The JSON body actually sent; the key travels as a Bearer token."""
+    client = AnthropicClient(api_key="test-key", model=_MODEL)
+    reply = await client.complete(_MESSAGES, effort="medium", system=system)
+    assert reply == _REPLY
+    assert len(transport.requests) == 1
+    request = transport.requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "https://api.anthropic.com/v1/messages"
+    assert request.headers["authorization"] == "Bearer test-key"
+    assert "x-api-key" not in request.headers
+    expected: dict[str, object] = {
+        "model": _MODEL,
+        "messages": _MESSAGES,
+        "max_tokens": 16000,
+        "thinking": {"type": "adaptive", "display": "summarized"},
+        "output_config": {"effort": "medium"},
+        "stream": True,
+    }
+    if system is not None:
+        expected["system"] = system
+    assert json.loads(request.content) == expected
+
+
+async def test_transport_refusal_is_read_from_the_stream(
+    transport: _Transport,
+) -> None:
+    transport.body = _sse(
+        *_opening_events("Sure, here"),
+        *_closing_events(
+            "refusal", {"type": "refusal", "category": "cyber", "explanation": "No."}
+        ),
+    )
+    client = AnthropicClient(api_key="test-key", model=_MODEL)
+    with pytest.raises(LLMRefusalError) as exc_info:
+        await client.complete(_MESSAGES, effort="medium")
+    assert exc_info.value.category == "cyber"
+    assert exc_info.value.explanation == "No."
+
+
+async def test_transport_mid_stream_error_event_raises_sdk_error_without_retry(
+    transport: _Transport,
+) -> None:
+    """An error event after a 200 surfaces as the SDK's generic `APIStatusError`
+    with the initial status (200), not as `OverloadedError`, and is not retried.
+    SDK errors reach callers unchanged: no provider-neutral mapping yet."""
+    error_event: dict[str, object] = {
+        "type": "error",
+        "error": {"type": "overloaded_error", "message": "Overloaded"},
+    }
+    transport.body = _sse(*_opening_events("partial"), error_event)
+    client = AnthropicClient(api_key="test-key", model=_MODEL)
+    with pytest.raises(anthropic.APIStatusError) as exc_info:
+        await client.complete(_MESSAGES, effort="medium")
+    assert type(exc_info.value) is anthropic.APIStatusError
+    assert exc_info.value.status_code == 200
+    assert exc_info.value.body == error_event
+    assert len(transport.requests) == 1
