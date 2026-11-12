@@ -1043,7 +1043,7 @@ list: Next steps → Step 4 → 4.7.
 | 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | ✅ `ccff431` |
 | 6 | Tables | F17, F18, F23, F25, F55 | ✅ `6ed7c78` |
 | 7 | `AgentSpec` constraints | F3, F72, F53, F54 | ✅ `eadf81a` |
-| 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | — |
+| 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | ✅ `0737b88` |
 | 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | — |
 | 10 | LLM client | F37 + F71, then F36; F51, F52, F56 | — |
 | 11 | Docs | F7, F21, F35, F49 (ADR 0010 amendment), F57; walkthrough "4.7 — Fixes" | — |
@@ -1276,11 +1276,51 @@ check in block 6).
 - Seen, not done (outside 4.7): lax mode accepts `level="1"` and `level=True`.
 - `agents/models.py` 163 → 231 lines; 430 tests; lint, typecheck green.
 
-**Stopped at:** block 7 done. Next: block 8 (other model contracts — F4
-`AwareDatetime`: present the caller impact of steps 6–8 before acting; F5
-`BlockingQuestion` consistency (decision G); F61 `JsonValue` + `allow_nan=False` in
-the 2 dict `json.dumps`; F62 `hide_input_in_errors=True` on every domain model
-(decision F); F1, F9, F12; F26 naive date).
+### Block 8 — other model contracts (`0737b88`)
+
+- Caller impact checked before the tests (grep + probes): no naive datetime in
+  `adjents/`, `tests/`, `scripts/` (every writer uses `datetime.now(UTC)` or
+  `tzinfo=UTC`; the interview drops any `created_at` from the LLM JSON); no
+  `ORDER BY`; only the interview builds a `Message` (`metadata={}`) and nothing
+  reads `metadata` → no caller of steps 6–8 changes.
+- Decided with the user: `model_config` per class (no shared base class, no new
+  module); NaN / infinity rejected in the model and by `json.dumps` as a backstop;
+  `AwareDatetime` without UTC normalization (→ Technical debt); the two team setup
+  domain models (`ValidationSession`, `AgentValidationRecord`) included in F4 / F62.
+- Probes: `AwareDatetime` accepts `Z` and `+02:00`, rejects a naive value or ISO
+  string (`timezone_aware`) and keeps the offset as given; `JsonValue` rejects
+  datetime, tuple and set but accepts NaN; `ConfigDict(allow_inf_nan=False)`
+  rejects NaN / ±inf at any depth of a `JsonValue` (`finite_number`); by default
+  `model_dump_json()` turns NaN into `null` silently.
+- F4 + F62 (decision F): the 12 domain models get
+  `ConfigDict(hide_input_in_errors=True)` and `AwareDatetime` fields (16).
+  F61: `Message` / `Memory` — `metadata: dict[str, JsonValue]`,
+  `allow_inf_nan=False`; `allow_nan=False` in the 2 `metadata` dumps of
+  `db/convert` (a value assigned after validation is not checked). F5 (decision G):
+  `BlockingQuestion` `@model_validator` (`answered` ⇔ `answer` and `answered_at`
+  set). `db/convert` docstring: a naive date stored in a row now fails at
+  `*_from_table()` (it came back naive before).
+- Tests: F9 + F12 merged — per model, one parametrized test over every field
+  (key removed → exactly `[((field,), "missing")]`), replacing the 9 imprecise
+  `missing_required_field` tests; a JSON-mode roundtrip per model; F1: the
+  `model_copy` tests go through `model_validate` (`level_no_cap` removed, covered
+  by block 7); F12: locations asserted on the invalid type / status tests; F26:
+  naive date in a row → `message_from_table` raises.
+- Red: 46 — 32 `DID NOT RAISE ValidationError` (naive datetimes, 6 inconsistent
+  answer states, 11 non-JSON `metadata` values, naive stored date), 12 input values
+  found in `str(exc)`, 2 `DID NOT RAISE ValueError` (backstop). Green at once
+  (characterization): the missing-field and JSON roundtrip contracts, the F1
+  rewrites, the 2 consistent answer states.
+- Contract tests are written out in each model test file (~40 similar lines per
+  file, one test file per module); a shared test helper module was not created.
+  The missing-field contract was not added for the team setup models (not in F9).
+- `agents/models.py` 231 → 265 lines; `team_setup.py` 851 → 855 (split in 8.3);
+  563 tests; lint, typecheck green.
+
+**Stopped at:** block 8 done. Next: block 9 (`PromptLoader` — F32 remove
+`render()`; F33 / F70 / F44 / F58 frontmatter parser rewrite and docstring; F47
+`as_posix()` keys; F34 `tmp_path` loader tests; F63 keys outside the prompts
+directory rejected).
 
 ---
 
@@ -1431,7 +1471,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   4.7, while keeping an independent review
 - [ ] 4.7 Review findings together (walkthrough + 4.5 + 4.6), fix with TDD. Walkthrough
   findings (details in `docs/walkthroughs/step-4-foundations.md`):
-  - F1: tests based on `model_copy(update=...)` (no validation) rebuilt through
+  - ✅ (block 8, `0737b88`) F1: tests based on `model_copy(update=...)` (no validation) rebuilt through
     `model_validate`
   - ✅ (block 2, `4eb0d2a`, `e0508ff`) F2 (Q2): `mypy --strict adjents/ tests/` in Makefile + CI; all 53 test errors
     fixed, including the tests of steps 7 and 8
@@ -1441,15 +1481,15 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     format-only pattern), used by `AgentSpec` and `BusinessContext`; an end before
     the start is accepted and documented as a window crossing midnight; boundary
     tests
-  - F4: `AwareDatetime` for every `datetime` field
-  - F5: `BlockingQuestion` consistency `@model_validator` (ADR 0004 schema kept)
+  - ✅ (block 8, `0737b88`) F4: `AwareDatetime` for every `datetime` field
+  - ✅ (block 8, `0737b88`) F5: `BlockingQuestion` consistency `@model_validator` (ADR 0004 schema kept)
   - F7: `BusinessContext` added to ARCHITECTURE §3 and to its serialization table
     (6 list fields — confirmed in 4.2)
-  - F9: tests for the "required but nullable" contract and a JSON-mode roundtrip.
+  - ✅ (block 8, `0737b88`) F9: tests for the "required but nullable" contract and a JSON-mode roundtrip.
     F61: `Message.metadata` / `Memory.metadata` typed `dict[str, JsonValue]`, and
     `allow_nan=False` in the two `json.dumps` calls (`JsonValue` accepts NaN); tests
     (datetime / tuple → `ValidationError`, NaN rejected)
-  - F12: error tests with one missing field each + assertion on `errors()` locations
+  - ✅ (block 8, `0737b88`) F12: error tests with one missing field each + assertion on `errors()` locations
   - F10: tautological tests accepted as is (no action)
   - ✅ (block 4, `dac9168`) F13: DB path anchored on the repository root (`data/adjents.db`, ARCHITECTURE
     §1) instead of the working directory; `create_db_and_tables` creates the
@@ -1488,8 +1528,8 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - ✅ (block 6, `6ed7c78`) F25: replace the SQLAlchemy-only table tests with
     constraint tests (`NOT NULL`
     rejections), alongside F18
-  - F26: `test_db_convert.py` — module-level imports (✅ block 3, `ebaf327`); tests
-    for a naive date (block 8), corrupt JSON and an unknown enum value in a row
+  - ✅ F26: `test_db_convert.py` — module-level imports (✅ block 3, `ebaf327`); tests
+    for a naive date (✅ block 8, `0737b88`), corrupt JSON and an unknown enum value in a row
     (✅ block 5, `ccff431`)
   - ✅ (block 5, `ccff431`) F27: one fixture decorator style in `conftest.py` (team setup fixtures move in
     8.3)
@@ -1550,7 +1590,8 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
 
   From the 4.6 code review (`docs/reviews/2026-10-29-foundations-code-review.md`);
   F60, F61, F63, F66, F67, F68, F70, F71, F72 are folded into the items above:
-  - F62: `hide_input_in_errors=True` on the models carrying user content
+  - ✅ (block 8, `0737b88`; every domain model, decision F) F62: `hide_input_in_errors=True`
+    on the models carrying user content
     (`BusinessContext`, `Message`, `Memory`, `AgentSpec`, `BlockingQuestion`); test
     that `str(exc)` holds no input value (the `InterviewError` message: step 6.3)
   - ✅ (block 2, `4eb0d2a`) F65 (with F2): effort tests parametrized with `get_args(Effort)` and typed
@@ -1900,6 +1941,12 @@ Branch: `feat/llm-router` — full `/feature` workflow
   reads `CHROMA_PATH` yet. When the memory layer reads it: default anchored on the
   repository root like `db/engine.py` (`<repo>/data/chroma`), template line
   commented out the same way → **Memory feature** (step 4.7, block 4)
+- Domain datetimes must be timezone-aware (`AwareDatetime`, step 4.7 block 8) but
+  keep the offset they are given (`+02:00` is not converted to UTC). Dates are
+  stored as ISO strings, which sort correctly only if every value is UTC in the same
+  format; every writer uses UTC today and no query orders by a date → normalize to
+  UTC (shared type with an `AfterValidator`) or sort on parsed values at the first
+  `ORDER BY` on a date column, or with the **FastAPI app** (client-supplied dates)
 
 ---
 
