@@ -321,6 +321,31 @@ async def test_complete_logs_refusal_at_warning_without_content(
     assert "secret partial" not in caplog.text
 
 
+@pytest.mark.parametrize("stop_reason", ["max_tokens", "model_context_window_exceeded"])
+async def test_complete_logs_truncation_at_warning_without_content(
+    mock_anthropic: MagicMock, caplog: pytest.LogCaptureFixture, stop_reason: StopReason
+) -> None:
+    _respond_with(
+        mock_anthropic,
+        _message(_text("secret partial"), stop_reason=stop_reason, output_tokens=1990),
+    )
+    client = AnthropicClient(api_key="test-key", model=_MODEL)
+    with caplog.at_level(logging.WARNING, logger="adjents.llm.anthropic_client"):
+        with pytest.raises(LLMTruncatedError):
+            await client.complete(_MESSAGES, effort="medium", max_tokens=2048)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    logged = warnings[0].getMessage()
+    for field in (
+        f"model={_MODEL}",
+        f"stop_reason={stop_reason}",
+        "output_tokens=1990",
+        "max_tokens=2048",
+    ):
+        assert field in logged
+    assert "secret partial" not in caplog.text
+
+
 async def test_complete_logs_thinking_summary_on_dedicated_logger(
     mock_anthropic: MagicMock, caplog: pytest.LogCaptureFixture
 ) -> None:
