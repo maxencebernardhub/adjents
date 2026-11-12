@@ -1044,7 +1044,7 @@ list: Next steps → Step 4 → 4.7.
 | 6 | Tables | F17, F18, F23, F25, F55 | ✅ `6ed7c78` |
 | 7 | `AgentSpec` constraints | F3, F72, F53, F54 | ✅ `eadf81a` |
 | 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | ✅ `0737b88` |
-| 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | — |
+| 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | ✅ `62adcb9` |
 | 10 | LLM client | F37 + F71, then F36; F51, F52, F56 | — |
 | 11 | Docs | F7, F21, F35, F49 (ADR 0010 amendment), F57; walkthrough "4.7 — Fixes" | — |
 
@@ -1317,10 +1317,46 @@ check in block 6).
 - `agents/models.py` 231 → 265 lines; `team_setup.py` 851 → 855 (split in 8.3);
   563 tests; lint, typecheck green.
 
-**Stopped at:** block 8 done. Next: block 9 (`PromptLoader` — F32 remove
-`render()`; F33 / F70 / F44 / F58 frontmatter parser rewrite and docstring; F47
-`as_posix()` keys; F34 `tmp_path` loader tests; F63 keys outside the prompts
-directory rejected).
+### Block 9 — `PromptLoader` (`62adcb9`)
+
+- Probe of the current parser first: CRLF, BOM, empty block and unterminated block
+  → `({}, text)` (frontmatter sent to the LLM); `²` → uncaught `ValueError`; a
+  non-`key: value` line skipped silently; a duplicate key overwrites; a lone `"` →
+  `""`. Callers: `.content`, `frontmatter.get("kickoff_message")` (interview), the
+  `LoadedPrompt(...)` constructor (one test); nothing calls `render()`.
+- Decided with the user: `ValueError` (no dedicated class) naming the file and the
+  line number, never the line; beyond the findings, duplicate keys, a lone or
+  unbalanced quote and non-identifier keys are rejected; frontmatter typed
+  `dict[str, str | int]` (one `Any` less); line endings normalized on the whole
+  text.
+- Line endings were already normalized: `Path.read_text()` opens in universal
+  newlines mode (`\r\n`, `\r` → `\n`, checked); F33's probe called
+  `_parse_frontmatter` directly. No normalization code added; documented in the
+  `PromptLoader` docstring.
+- F33 / F70 / F44 / F58: line-based parser — block opened by a first line exactly
+  `---`, closed by the next such line (empty block recognised), unterminated →
+  error; every non-blank line in the block must be `key: value` with an identifier
+  key (catches a block closed by a `---` rule in the body); `[0-9]+` → `int`;
+  `utf-8-sig` drops the BOM; docstrings rewritten (`get()` `Raises:` included).
+  F63: `resolve()` + `is_relative_to` → `ValueError` for `..` and absolute keys
+  (a symlink leaving the directory would be rejected too; none exists). F47:
+  `as_posix()` keys. F32: `render()` and its 2 tests removed.
+- F34: `test_prompts_loader.py` rewritten on `tmp_path` files (29 tests replace 9);
+  the cache tests delete or modify the file after loading; no assertion on a real
+  prompt's content, except one test that the 8 real prompts all parse.
+- Red: 14 — 11 `DID NOT RAISE ValueError` (7 malformed frontmatters, the line
+  quoted in the message, 3 keys outside the directory), 2 assertions (empty block,
+  BOM), the `²` `ValueError`. Green at once (characterization): CRLF / CR (see
+  above), `as_posix()` keys (cannot fail on macOS), cache, real prompts.
+- `loader.py` 146 → 172 lines; 583 tests; lint, typecheck green.
+
+**Stopped at:** block 9 done. Next: block 10 (LLM client — load the `claude-api`
+skill and read the installed SDK sources (`anthropic` 2.1.0) first; decision A:
+confirm `httpx2` as a dev dependency with the user before adding it; F37 + F71
+transport-level tests through `httpx2.MockTransport` (auth header, SDK environment
+variables removed), then F36 typed `messages.stream(...)` call; F51 truncation
+WARNING test; F52 `llm/types.py`, `llm/errors.py` module docstrings; F56
+`llm/errors.py` docstring).
 
 ---
 
@@ -1533,18 +1569,18 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     (✅ block 5, `ccff431`)
   - ✅ (block 5, `ccff431`) F27: one fixture decorator style in `conftest.py` (team setup fixtures move in
     8.3)
-  - F32 (Q7): remove `LoadedPrompt.render()` and its 2 tests (fails on the prompts'
+  - ✅ (block 9, `62adcb9`) F32 (Q7): remove `LoadedPrompt.render()` and its 2 tests (fails on the prompts'
     own JSON braces; unused in production)
-  - F33: frontmatter parser — normalize line endings, raise on an unterminated
+  - ✅ (block 9, `62adcb9`) F33: frontmatter parser — normalize line endings, raise on an unterminated
     frontmatter block, tests. F70: strip a UTF-8 BOM (`utf-8-sig`); reject any
     non-blank line inside the block that is not `key: value` (an unterminated block
     closed by a `---` rule in the body is not caught otherwise); a quoted value
     needs at least 2 characters; one `tmp_path` test per case
-  - F44 (with F33): a value accepted by `isdigit()` but rejected by `int()` (`²`) no
+  - ✅ (block 9, `62adcb9`) F44 (with F33): a value accepted by `isdigit()` but rejected by `int()` (`²`) no
     longer raises an uncaught `ValueError`; test
-  - F47 (with F33 / F34): `load_all()` keys built with `as_posix()` (OS-independent
+  - ✅ (block 9, `62adcb9`) F47 (with F33 / F34): `load_all()` keys built with `as_posix()` (OS-independent
     separator); test
-  - F34: loader tests on `tmp_path` files (parser cases from F33); `load_all` tests
+  - ✅ (block 9, `62adcb9`) F34: loader tests on `tmp_path` files (parser cases from F33); `load_all` tests
     read the cache; no assertion on a real prompt's `model_hint`. F63: `get()`
     rejects keys resolving outside the prompts directory (`..`, absolute) with an
     `is_relative_to` check; `tmp_path` test
@@ -1583,7 +1619,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     (`db/tables.py`) — F55 ✅ (block 6, `6ed7c78`); F53, F54 ✅ (block 7, `eadf81a`)
   - F56: `llm/errors.py` docstring — retry loops cover invalid output (JSON, schema,
     structure), never LLM errors (ADR 0012 sentence: step 4b.2)
-  - F58 (with F33 / F44): `_parse_frontmatter` docstring matches the rewritten parser
+  - ✅ (block 9, `62adcb9`) F58 (with F33 / F44): `_parse_frontmatter` docstring matches the rewritten parser
     (empty frontmatter block)
   - ✅ (block 4, `dac9168`) F59 (with F14): `_async_url` — remove the redundant `"aiosqlite" not in raw`
     clause; test with a path containing "aiosqlite"
