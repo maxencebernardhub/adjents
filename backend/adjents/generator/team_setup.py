@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, ConfigDict
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -40,13 +40,17 @@ class AgentValidationStatus(StrEnum):
 
 
 class ValidationSession(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
-    started_at: datetime
-    completed_at: datetime | None
+    started_at: AwareDatetime
+    completed_at: AwareDatetime | None
     skipped: bool
 
 
 class AgentValidationRecord(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     session_id: str
     root_agent_id: str
@@ -56,7 +60,7 @@ class AgentValidationRecord(BaseModel):
     navigation_stack: list[str]
     conversation_ids: list[str]
     visited_agent_ids: list[str]
-    validated_at: datetime | None
+    validated_at: AwareDatetime | None
 
 
 # Re-export for backward compatibility with external importers.

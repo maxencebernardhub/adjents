@@ -131,7 +131,9 @@ adjents/
 ├── data/outputs/          # Agent-produced deliverables
 ├── docs/
 │   ├── decisions/         # Architecture Decision Records (ADRs)
+│   ├── reviews/           # Spec compliance and code review reports
 │   ├── specs/             # Feature specs and implementation plans
+│   ├── walkthroughs/      # Code walkthrough notes: explanations, Q&A, findings
 │   ├── ARCHITECTURE.md
 │   └── VISION.md          # Full product vision and MVP scope
 └── .github/

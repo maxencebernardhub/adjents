@@ -80,3 +80,26 @@ This ADR holds as long as those functions are generic tools invoked by the gener
 loop, with each agent's access defined by data (its skill list). Whether they are
 hand-written, LLM-generated or MCP tools is a v0.2 decision, to be recorded in a new
 ADR that refines or supersedes this one.
+
+---
+
+## Amendment — 2026-11-12 (how agent data reaches the LLM)
+
+The Decision says prompts are "shared templates per agent type … rendered with the
+agent's fields". No production code renders a prompt: `LoadedPrompt.render()`, the
+only templating method, had no caller and was removed in step 4.7 (it also failed on
+the JSON braces of the prompts' own examples).
+
+What the code does, and what this ADR now states:
+
+- System prompts are **fixed texts** shared per agent type (`prompts/agent/`,
+  `prompts/coo/`), used as written (`PromptLoader.get(key).content`).
+- An agent's own data — its fields, its skills, its direct reports — reaches the LLM
+  in a **message** built from its records (`utils/agent_context.py`), today in team
+  setup and reconfiguration.
+
+The decision itself is unchanged: an agent is data, and what makes it specific comes
+from its records, not from a class or a per-agent prompt. A fixed system prompt also
+keeps one prefix shared by every agent, which prompt caching can reuse (the cache
+matches an exact prefix). If a prompt ever needs variables, the mechanism is decided
+with the agent loop.

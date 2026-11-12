@@ -39,7 +39,7 @@ jobs:
         working-directory: backend
 
       - name: Typecheck with mypy
-        run: uv run mypy --strict adjents/
+        run: uv run mypy --strict adjents/ tests/
         working-directory: backend
 
       - name: Run tests

@@ -2,11 +2,17 @@
 
 Raised by LLM clients when the call succeeded at the HTTP level but the response is
 unusable: declined, cut off at a limit, empty or stopped for an unexpected reason.
-Callers neither retry nor wrap them (their retry loops only cover invalid JSON); they
+Callers neither retry nor wrap them: their retry loops cover invalid output only —
+JSON that does not parse, and in org generation also a wrong schema or structure —
+and call the client outside the `try`, so LLM errors are never retried. They
 propagate to the caller's caller — today the smoke scripts, later the API layer,
 which maps refusals and truncations to distinct outcomes. Transport errors (rate
 limits, 5xx, network) are not covered here: they are still raised by the provider
 SDK (mapping planned in step 10).
+
+Entry points: `LLMResponseError`, the base class callers catch to handle every
+unusable response at once, and its two subclasses `LLMRefusalError` and
+`LLMTruncatedError`, to handle one case.
 
 Related ADRs: 0012 (provider-neutral LLM call contract).
 """

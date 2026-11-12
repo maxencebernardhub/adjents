@@ -1,9 +1,10 @@
 """Tests for messaging.models: Message, Conversation."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from adjents.messaging.models import Conversation, Message
 
@@ -17,6 +18,15 @@ def make_message(msg_id: str = "msg-001", parent: str | None = None) -> Message:
         metadata={"task_id": "task-042"},
         parent_message_id=parent,
         created_at=datetime(2026, 5, 20, 10, 0, tzinfo=UTC),
+    )
+
+
+def make_conversation() -> Conversation:
+    return Conversation(
+        id="conv-001",
+        participant_agents=["agent-001"],
+        message_ids=["msg-001"],
+        started_at=datetime(2026, 5, 20, tzinfo=UTC),
     )
 
 
@@ -66,16 +76,30 @@ def test_message_metadata_is_dict() -> None:
     assert isinstance(msg.metadata, dict)
 
 
-def test_message_missing_required_field() -> None:
-    with pytest.raises(ValidationError):
-        Message(  # type: ignore[call-arg]
-            id="x",
-            from_agent="agent-001",
-            content="hello",
-            metadata={},
-            parent_message_id=None,
-            created_at=datetime(2026, 5, 20, tzinfo=UTC),
-        )
+def test_message_metadata_accepts_nested_json() -> None:
+    metadata = {"conv_id": "c-1", "tags": ["a", 1, 2.5, None], "trace": {"ok": True}}
+    msg = Message.model_validate({**make_message().model_dump(), "metadata": metadata})
+    assert msg.metadata == metadata
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(2026, 5, 20, tzinfo=UTC),  # not JSON: crashes `json.dumps`
+        (1, 2),  # would come back as a list
+        {"a", "b"},
+        float("nan"),  # `json.dumps` writes NaN, which is not JSON
+        float("inf"),
+        [1.0, float("-inf")],
+        {"nested": float("nan")},
+    ],
+    ids=["datetime", "tuple", "set", "nan", "inf", "nested-inf", "nested-nan"],
+)
+def test_message_metadata_rejects_non_json_values(value: object) -> None:
+    data = {**make_message().model_dump(), "metadata": {"key": value}}
+    with pytest.raises(ValidationError) as exc_info:
+        Message.model_validate(data)
+    assert {error["loc"][0] for error in exc_info.value.errors()} == {"metadata"}
 
 
 def test_message_serialisation_roundtrip() -> None:
@@ -110,21 +134,70 @@ def test_conversation_message_ids_ordered() -> None:
     assert conv.message_ids == ids
 
 
-def test_conversation_missing_required_field() -> None:
-    with pytest.raises(ValidationError):
-        Conversation(  # type: ignore[call-arg]
-            id="x",
-            message_ids=[],
-            started_at=datetime(2026, 5, 20, tzinfo=UTC),
-        )
-
-
 def test_conversation_serialisation_roundtrip() -> None:
-    conv = Conversation(
-        id="conv-001",
-        participant_agents=["agent-001"],
-        message_ids=["msg-001"],
-        started_at=datetime(2026, 5, 20, tzinfo=UTC),
-    )
+    conv = make_conversation()
     restored = Conversation.model_validate(conv.model_dump())
     assert restored == conv
+
+
+# --- Contracts shared by every model of the module ---
+
+_FACTORIES: list[Callable[[], BaseModel]] = [make_message, make_conversation]
+_FIELDS = [
+    (factory, field) for factory in _FACTORIES for field in type(factory()).model_fields
+]
+_DATETIME_FIELDS = [(make_message, "created_at"), (make_conversation, "started_at")]
+# A string field per model: free text where there is one (`Conversation` has none).
+_CONTENT_FIELDS = [(make_message, "content"), (make_conversation, "id")]
+
+
+def _id(value: object) -> str:
+    return getattr(value, "__name__", str(value)).removeprefix("make_")
+
+
+@pytest.mark.parametrize(("factory", "field"), _FIELDS, ids=_id)
+def test_every_field_is_required(factory: Callable[[], BaseModel], field: str) -> None:
+    """Nullable fields included: a JSON that omits a key fails instead of
+    defaulting to None."""
+    data = factory().model_dump()
+    del data[field]
+    with pytest.raises(ValidationError) as exc_info:
+        type(factory()).model_validate(data)
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        ((field,), "missing")
+    ]
+
+
+@pytest.mark.parametrize("factory", _FACTORIES, ids=_id)
+def test_json_mode_roundtrip(factory: Callable[[], BaseModel]) -> None:
+    """The path of the API and the WebSocket: through JSON text, not Python
+    objects."""
+    model = factory()
+    assert type(model).model_validate_json(model.model_dump_json()) == model
+
+
+@pytest.mark.parametrize(("factory", "field"), _DATETIME_FIELDS, ids=_id)
+def test_naive_datetime_is_rejected(
+    factory: Callable[[], BaseModel], field: str
+) -> None:
+    data = {**factory().model_dump(), field: datetime(2026, 5, 20, 10, 0)}
+    with pytest.raises(ValidationError) as exc_info:
+        type(factory()).model_validate(data)
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        ((field,), "timezone_aware")
+    ]
+
+
+@pytest.mark.parametrize(("factory", "field"), _CONTENT_FIELDS, ids=_id)
+def test_validation_error_hides_the_input(
+    factory: Callable[[], BaseModel], field: str
+) -> None:
+    """Error messages reach exceptions and logs: they name the field, never the
+    value."""
+    data = {**factory().model_dump(), field: ["SECRET-INPUT"]}
+    with pytest.raises(ValidationError) as exc_info:
+        type(factory()).model_validate(data)
+    assert field in str(exc_info.value)
+    assert "SECRET-INPUT" not in str(exc_info.value)

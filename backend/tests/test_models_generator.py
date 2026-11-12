@@ -55,6 +55,21 @@ def test_business_context_no_work_hours() -> None:
     assert bc.work_hours is None
 
 
+def test_business_context_accepts_overnight_work_hours() -> None:
+    """Same `WorkHours` type as `AgentSpec`: an end before the start crosses
+    midnight."""
+    assert make_bc(work_hours="22:00-02:00").work_hours == "22:00-02:00"
+
+
+@pytest.mark.parametrize("value", ["evenings", "99:99-25:00", "18:00-18:00"])
+def test_business_context_rejects_invalid_work_hours(value: str) -> None:
+    """Rejected at the interview, not only later when org generation copies the
+    value into every agent."""
+    with pytest.raises(ValidationError) as exc_info:
+        make_bc(work_hours=value)
+    assert {error["loc"][0] for error in exc_info.value.errors()} == {"work_hours"}
+
+
 def test_business_context_no_financial_goals() -> None:
     bc = make_bc(financial_goals=None)
     assert bc.financial_goals is None
@@ -76,15 +91,41 @@ def test_business_context_empty_lists() -> None:
     assert bc.existing_tools == []
 
 
-def test_business_context_missing_required_field() -> None:
-    with pytest.raises(ValidationError):
-        BusinessContext(  # type: ignore[call-arg]
-            id="bc-001",
-            founder_name="Alex",
-            language="fr",
-            core_activity="UX design",
-            created_at=datetime(2026, 5, 20, tzinfo=UTC),
-        )
+@pytest.mark.parametrize("field", list(BusinessContext.model_fields))
+def test_business_context_every_field_is_required(field: str) -> None:
+    """Nullable fields included: an extraction JSON that omits a key fails instead
+    of defaulting to None."""
+    data = make_bc().model_dump()
+    del data[field]
+    with pytest.raises(ValidationError) as exc_info:
+        BusinessContext.model_validate(data)
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        ((field,), "missing")
+    ]
+
+
+def test_business_context_json_mode_roundtrip() -> None:
+    bc = make_bc()
+    assert BusinessContext.model_validate_json(bc.model_dump_json()) == bc
+
+
+def test_business_context_rejects_naive_datetime() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        make_bc(created_at=datetime(2026, 5, 20, 10, 0))
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        (("created_at",), "timezone_aware")
+    ]
+
+
+def test_business_context_validation_error_hides_the_input() -> None:
+    """The interview wraps this error in its own: it must name the field, never
+    the extracted business data."""
+    with pytest.raises(ValidationError) as exc_info:
+        make_bc(target_clients="Patients of Dr X")
+    assert "target_clients" in str(exc_info.value)
+    assert "Patients of Dr X" not in str(exc_info.value)
 
 
 def test_business_context_serialisation_roundtrip() -> None:

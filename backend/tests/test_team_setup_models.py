@@ -3,7 +3,11 @@
 All tests are pure (no DB, no LLM).
 """
 
+from collections.abc import Callable
 from datetime import UTC, datetime
+
+import pytest
+from pydantic import BaseModel, ValidationError
 
 from adjents.db.convert import (
     agent_validation_record_from_table,
@@ -19,10 +23,10 @@ from adjents.generator.team_setup import (
 
 
 def test_agent_validation_status_values() -> None:
-    assert AgentValidationStatus.PENDING == "pending"
-    assert AgentValidationStatus.IN_PROGRESS == "in_progress"
-    assert AgentValidationStatus.VALIDATED == "validated"
-    assert AgentValidationStatus.SKIPPED == "skipped"
+    assert AgentValidationStatus.PENDING.value == "pending"
+    assert AgentValidationStatus.IN_PROGRESS.value == "in_progress"
+    assert AgentValidationStatus.VALIDATED.value == "validated"
+    assert AgentValidationStatus.SKIPPED.value == "skipped"
 
 
 def test_validation_session_roundtrip() -> None:
@@ -161,3 +165,73 @@ def test_agent_validation_record_nullable_fields() -> None:
     assert restored.active_agent_id is None
     assert restored.active_conversation_id is None
     assert restored.validated_at is None
+
+
+# --- Contracts shared by every model of the module ---
+
+
+def make_validation_session() -> ValidationSession:
+    return ValidationSession(
+        id="sess-1",
+        started_at=datetime(2026, 5, 28, 10, 0, 0, tzinfo=UTC),
+        completed_at=datetime(2026, 5, 28, 11, 0, 0, tzinfo=UTC),
+        skipped=False,
+    )
+
+
+def make_agent_validation_record() -> AgentValidationRecord:
+    return AgentValidationRecord(
+        id="rec-1",
+        session_id="sess-1",
+        root_agent_id="agent-1",
+        status=AgentValidationStatus.VALIDATED,
+        active_agent_id="agent-2",
+        active_conversation_id="conv-1",
+        navigation_stack=["agent-1"],
+        conversation_ids=["conv-1"],
+        visited_agent_ids=["agent-2"],
+        validated_at=datetime(2026, 5, 28, 12, 0, 0, tzinfo=UTC),
+    )
+
+
+_FACTORIES: list[Callable[[], BaseModel]] = [
+    make_validation_session,
+    make_agent_validation_record,
+]
+_DATETIME_FIELDS = [
+    (make_validation_session, "started_at"),
+    (make_validation_session, "completed_at"),
+    (make_agent_validation_record, "validated_at"),
+]
+
+
+def _id(value: object) -> str:
+    return getattr(value, "__name__", str(value)).removeprefix("make_")
+
+
+@pytest.mark.parametrize("factory", _FACTORIES, ids=_id)
+def test_json_mode_roundtrip(factory: Callable[[], BaseModel]) -> None:
+    model = factory()
+    assert type(model).model_validate_json(model.model_dump_json()) == model
+
+
+@pytest.mark.parametrize(("factory", "field"), _DATETIME_FIELDS, ids=_id)
+def test_naive_datetime_is_rejected(
+    factory: Callable[[], BaseModel], field: str
+) -> None:
+    data = {**factory().model_dump(), field: datetime(2026, 5, 28, 10, 0)}
+    with pytest.raises(ValidationError) as exc_info:
+        type(factory()).model_validate(data)
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        ((field,), "timezone_aware")
+    ]
+
+
+@pytest.mark.parametrize("factory", _FACTORIES, ids=_id)
+def test_validation_error_hides_the_input(factory: Callable[[], BaseModel]) -> None:
+    data = {**factory().model_dump(), "id": ["SECRET-INPUT"]}
+    with pytest.raises(ValidationError) as exc_info:
+        type(factory()).model_validate(data)
+    assert "id" in str(exc_info.value)
+    assert "SECRET-INPUT" not in str(exc_info.value)

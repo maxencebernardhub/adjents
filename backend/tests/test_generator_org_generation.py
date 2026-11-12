@@ -421,7 +421,7 @@ async def test_generate_persists_agent_specs(
     """2 AgentSpecTable rows must be inserted for the 2-agent response."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -438,7 +438,7 @@ async def test_generate_persists_skills(
     """2 SkillTable rows (one per agent) must be inserted."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -455,7 +455,7 @@ async def test_generate_persists_agent_states(
     """2 AgentStateTable rows must be inserted."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -475,7 +475,7 @@ async def test_generate_all_states_are_paused(
     """All AgentStateTable rows must have status='paused'."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -492,7 +492,7 @@ async def test_generate_all_specs_are_paused(
     """All AgentSpecTable rows must have is_paused=True."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -509,7 +509,7 @@ async def test_generate_coo_has_no_parent_id(
     """COO's parent_id must be None in the DB."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -527,7 +527,7 @@ async def test_generate_n1_parent_id_is_coo_uuid(
     """N-1 agent's parent_id must match the COO's id."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -546,7 +546,7 @@ async def test_generate_skill_ids_reference_persisted_skills(
     """Each skill_id in AgentSpec.skill_ids must correspond to a SkillTable row."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -570,7 +570,7 @@ async def test_generate_returns_org_result(
     """generate() must return an OrgGenerationResult with 2 agents and 2 skills."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -591,7 +591,7 @@ async def test_generate_retry_invalid_json_succeeds(
     """2 non-JSON responses then 1 valid → success, DB has 2 AgentSpec rows."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = MagicMock(spec=AnthropicClient)
     client.complete = AsyncMock(
@@ -612,7 +612,7 @@ async def test_generate_retry_invalid_structure_with_feedback(
     """1 structurally invalid response (two COOs) then 1 valid → success."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     two_coos = json.dumps(
         {
@@ -693,7 +693,7 @@ async def test_generate_twice_inserts_two_independent_sets(
     """Calling generate() twice inserts 4 AgentSpec rows (new UUIDs, no conflict)."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     client = _make_client(_VALID_LLM_RESPONSE)
     gen = GeneratorOrgGeneration(client, mock_prompt_loader, session)
@@ -710,7 +710,7 @@ async def test_generate_excludes_human_covered_domain(
     """Finance in human coverage → first call rejected, second (COO-only) accepted."""
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    session = async_session  # type: ignore[assignment]
+    session = async_session
     assert isinstance(session, AsyncSession)
     context = BusinessContext(
         id=str(uuid4()),
