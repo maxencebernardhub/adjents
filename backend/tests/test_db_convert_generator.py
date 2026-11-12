@@ -41,7 +41,9 @@ async def test_business_context_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(BusinessContextTable, bc.id)
+    stored = await async_session.get(
+        BusinessContextTable, bc.id, populate_existing=True
+    )
     assert stored is not None
     restored = business_context_from_table(stored)
     assert restored == bc
@@ -74,7 +76,9 @@ async def test_business_context_nullable_fields_roundtrip(
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(BusinessContextTable, bc.id)
+    stored = await async_session.get(
+        BusinessContextTable, bc.id, populate_existing=True
+    )
     assert stored is not None
     restored = business_context_from_table(stored)
     assert restored.business_name is None

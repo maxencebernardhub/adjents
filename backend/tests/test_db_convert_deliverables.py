@@ -25,7 +25,7 @@ async def test_deliverable_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(DeliverableTable, d.id)
+    stored = await async_session.get(DeliverableTable, d.id, populate_existing=True)
     assert stored is not None
     restored = deliverable_from_table(stored)
     assert restored == d
@@ -44,7 +44,7 @@ async def test_deliverable_no_project_roundtrip(async_session: AsyncSession) -> 
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(DeliverableTable, d.id)
+    stored = await async_session.get(DeliverableTable, d.id, populate_existing=True)
     assert stored is not None
     restored = deliverable_from_table(stored)
     assert restored.project_id is None

@@ -30,7 +30,7 @@ async def test_message_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(MessageTable, msg.id)
+    stored = await async_session.get(MessageTable, msg.id, populate_existing=True)
     assert stored is not None
     restored = message_from_table(stored)
     assert restored == msg
@@ -59,7 +59,7 @@ async def test_message_with_parent_roundtrip(async_session: AsyncSession) -> Non
     async_session.add(message_to_table(child))
     await async_session.commit()
 
-    stored = await async_session.get(MessageTable, "msg-002")
+    stored = await async_session.get(MessageTable, "msg-002", populate_existing=True)
     assert stored is not None
     restored = message_from_table(stored)
     assert restored.parent_message_id == "msg-001"
@@ -79,7 +79,7 @@ async def test_conversation_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(ConversationTable, conv.id)
+    stored = await async_session.get(ConversationTable, conv.id, populate_existing=True)
     assert stored is not None
     restored = conversation_from_table(stored)
     assert restored == conv

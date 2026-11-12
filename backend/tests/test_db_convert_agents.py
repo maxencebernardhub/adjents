@@ -1,7 +1,10 @@
 """Tests for db.convert.agents: agent domain models ↔ SQLModel table roundtrips."""
 
+import json
 from datetime import UTC, datetime
 
+import pytest
+from sqlalchemy import text
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from adjents.agents.models import (
@@ -52,7 +55,7 @@ async def test_agent_spec_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(AgentSpecTable, spec.id)
+    stored = await async_session.get(AgentSpecTable, spec.id, populate_existing=True)
     assert stored is not None
     restored = agent_spec_from_table(stored)
     assert restored == spec
@@ -81,7 +84,7 @@ async def test_agent_spec_nullable_fields_roundtrip(
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(AgentSpecTable, spec.id)
+    stored = await async_session.get(AgentSpecTable, spec.id, populate_existing=True)
     assert stored is not None
     restored = agent_spec_from_table(stored)
     assert restored.parent_id is None
@@ -104,7 +107,9 @@ async def test_agent_state_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(AgentStateTable, state.agent_id)
+    stored = await async_session.get(
+        AgentStateTable, state.agent_id, populate_existing=True
+    )
     assert stored is not None
     restored = agent_state_from_table(stored)
     assert restored == state
@@ -122,7 +127,9 @@ async def test_agent_state_meeting_with_roundtrip(async_session: AsyncSession) -
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(AgentStateTable, state.agent_id)
+    stored = await async_session.get(
+        AgentStateTable, state.agent_id, populate_existing=True
+    )
     assert stored is not None
     restored = agent_state_from_table(stored)
     assert restored.meeting_with == ["agent-001", "agent-003"]
@@ -144,10 +151,67 @@ async def test_skill_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(SkillTable, skill.id)
+    stored = await async_session.get(SkillTable, skill.id, populate_existing=True)
     assert stored is not None
     restored = skill_from_table(stored)
     assert restored == skill
+
+
+# --- Malformed rows: the roundtrip reads must reach SQLite ---
+
+
+async def _corrupt(session: AsyncSession, statement: str) -> None:
+    """Change a committed row behind the ORM's back, as another writer would."""
+    conn = await session.connection()
+    await conn.execute(text(statement))
+    await session.commit()
+
+
+async def test_skill_from_table_rejects_corrupt_json_stored_in_sqlite(
+    async_session: AsyncSession,
+) -> None:
+    """Guards the roundtrip read pattern: a read served from the session, not from
+    SQLite, would return the row as added and this test would not raise."""
+    skill = Skill(
+        id="skill-001",
+        name="Draft invoice",
+        description="Generates a PDF invoice from template.",
+        inputs=["Client name"],
+        outputs=[],
+        requires_human_review=False,
+    )
+    row = skill_to_table(skill)
+    async_session.add(row)
+    await async_session.commit()
+    await _corrupt(async_session, "UPDATE skills SET inputs = 'not json'")
+
+    stored = await async_session.get(SkillTable, skill.id, populate_existing=True)
+    assert stored is not None
+    with pytest.raises(json.JSONDecodeError):
+        skill_from_table(stored)
+
+
+async def test_agent_state_from_table_rejects_unknown_status_stored_in_sqlite(
+    async_session: AsyncSession,
+) -> None:
+    state = AgentState(
+        agent_id="agent-001",
+        status=AgentStatus.PAUSED,
+        current_task_summary=None,
+        meeting_with=[],
+        updated_at=datetime(2026, 5, 20, 10, 0, tzinfo=UTC),
+    )
+    row = agent_state_to_table(state)
+    async_session.add(row)
+    await async_session.commit()
+    await _corrupt(async_session, "UPDATE agent_states SET status = 'flying'")
+
+    stored = await async_session.get(
+        AgentStateTable, state.agent_id, populate_existing=True
+    )
+    assert stored is not None
+    with pytest.raises(ValueError, match="flying"):
+        agent_state_from_table(stored)
 
 
 # --- BlockingQuestion ---
@@ -168,7 +232,9 @@ async def test_blocking_question_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(BlockingQuestionTable, bq.id)
+    stored = await async_session.get(
+        BlockingQuestionTable, bq.id, populate_existing=True
+    )
     assert stored is not None
     restored = blocking_question_from_table(stored)
     assert restored == bq
@@ -191,7 +257,9 @@ async def test_blocking_question_answered_roundtrip(
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(BlockingQuestionTable, bq.id)
+    stored = await async_session.get(
+        BlockingQuestionTable, bq.id, populate_existing=True
+    )
     assert stored is not None
     restored = blocking_question_from_table(stored)
     assert restored.answered is True

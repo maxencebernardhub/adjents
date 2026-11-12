@@ -21,7 +21,7 @@ async def test_memory_agent_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(MemoryTable, mem.id)
+    stored = await async_session.get(MemoryTable, mem.id, populate_existing=True)
     assert stored is not None
     restored = memory_from_table(stored)
     assert restored == mem
@@ -39,7 +39,7 @@ async def test_memory_global_kb_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(MemoryTable, mem.id)
+    stored = await async_session.get(MemoryTable, mem.id, populate_existing=True)
     assert stored is not None
     restored = memory_from_table(stored)
     assert restored.agent_id is None

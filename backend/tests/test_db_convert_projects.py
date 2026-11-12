@@ -25,7 +25,7 @@ async def test_project_roundtrip(async_session: AsyncSession) -> None:
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(ProjectTable, proj.id)
+    stored = await async_session.get(ProjectTable, proj.id, populate_existing=True)
     assert stored is not None
     restored = project_from_table(stored)
     assert restored == proj
@@ -47,7 +47,7 @@ async def test_project_no_deadline_roundtrip(async_session: AsyncSession) -> Non
     async_session.add(row)
     await async_session.commit()
 
-    stored = await async_session.get(ProjectTable, proj.id)
+    stored = await async_session.get(ProjectTable, proj.id, populate_existing=True)
     assert stored is not None
     restored = project_from_table(stored)
     assert restored.deadline is None
