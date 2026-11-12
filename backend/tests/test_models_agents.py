@@ -49,12 +49,12 @@ def make_agent_spec() -> AgentSpec:
 
 
 def test_agent_status_all_values() -> None:
-    assert AgentStatus.IDLE == "idle"
-    assert AgentStatus.WORKING == "working"
-    assert AgentStatus.IN_MEETING_1ON1 == "meeting_1on1"
-    assert AgentStatus.IN_MEETING_GROUP == "meeting_group"
-    assert AgentStatus.PAUSED == "paused"
-    assert AgentStatus.WAITING_FOR_HUMAN == "waiting_for_human"
+    assert AgentStatus.IDLE.value == "idle"
+    assert AgentStatus.WORKING.value == "working"
+    assert AgentStatus.IN_MEETING_1ON1.value == "meeting_1on1"
+    assert AgentStatus.IN_MEETING_GROUP.value == "meeting_group"
+    assert AgentStatus.PAUSED.value == "paused"
+    assert AgentStatus.WAITING_FOR_HUMAN.value == "waiting_for_human"
 
 
 def test_agent_status_is_str_enum() -> None:

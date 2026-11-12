@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Generator
+from typing import get_args
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +18,7 @@ from anthropic.types import (
 
 from adjents.llm.anthropic_client import AnthropicClient
 from adjents.llm.errors import LLMRefusalError, LLMResponseError, LLMTruncatedError
+from adjents.llm.types import Effort
 
 _MESSAGES = [{"role": "user", "content": "Hello."}]
 _MODEL = "claude-opus-5-5"
@@ -138,12 +140,12 @@ async def test_complete_without_system_omits_key(mock_anthropic: MagicMock) -> N
     assert "system" not in _sent_kwargs(mock_anthropic)
 
 
-@pytest.mark.parametrize("effort", ["low", "medium", "high"])
+@pytest.mark.parametrize("effort", get_args(Effort))
 async def test_complete_passes_effort_in_output_config(
-    mock_anthropic: MagicMock, effort: str
+    mock_anthropic: MagicMock, effort: Effort
 ) -> None:
     client = AnthropicClient(api_key="test-key", model=_MODEL)
-    await client.complete(_MESSAGES, effort=effort)  # type: ignore[arg-type]
+    await client.complete(_MESSAGES, effort=effort)
     assert _sent_kwargs(mock_anthropic)["output_config"] == {"effort": effort}
 
 
@@ -158,10 +160,10 @@ async def test_complete_sends_adaptive_thinking_with_summarized_display(
     }
 
 
-async def test_complete_sends_no_sampling_prefill_or_tool_parameters(
+async def test_complete_sends_no_sampling_or_tool_parameters(
     mock_anthropic: MagicMock,
 ) -> None:
-    """temperature / top_p / top_k / tool_choice return a 400 on Claude 5.5 models."""
+    """Sampling parameters and a forced tool_choice return a 400 on Claude 5.5."""
     client = AnthropicClient(api_key="test-key", model=_MODEL)
     await client.complete(_MESSAGES, effort="medium")
     sent = _sent_kwargs(mock_anthropic)

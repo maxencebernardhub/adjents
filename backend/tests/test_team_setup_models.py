@@ -19,10 +19,10 @@ from adjents.generator.team_setup import (
 
 
 def test_agent_validation_status_values() -> None:
-    assert AgentValidationStatus.PENDING == "pending"
-    assert AgentValidationStatus.IN_PROGRESS == "in_progress"
-    assert AgentValidationStatus.VALIDATED == "validated"
-    assert AgentValidationStatus.SKIPPED == "skipped"
+    assert AgentValidationStatus.PENDING.value == "pending"
+    assert AgentValidationStatus.IN_PROGRESS.value == "in_progress"
+    assert AgentValidationStatus.VALIDATED.value == "validated"
+    assert AgentValidationStatus.SKIPPED.value == "skipped"
 
 
 def test_validation_session_roundtrip() -> None:

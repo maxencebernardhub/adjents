@@ -47,7 +47,7 @@ async def test_start_session_creates_validation_session(
     mock_complete = AsyncMock(return_value="Hello, I'm Jordan.")
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     session = await orch.start_session()
-    rows = (await async_session.exec(select(ValidationSessionTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(ValidationSessionTable))).all()
     assert len(rows) == 1
     assert rows[0].id == session.id
 
@@ -61,7 +61,7 @@ async def test_start_session_creates_one_record_per_coo_and_n1(
     mock_complete = AsyncMock(return_value="Hello.")
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     await orch.start_session()
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     # COO (level=0) + N-1 Finance Lead (level=1); N-2 Invoicing is NOT a root
     assert len(rows) == 2
     root_ids = {r.root_agent_id for r in rows}
@@ -79,7 +79,7 @@ async def test_start_session_all_records_pending(
     mock_complete = AsyncMock(return_value="Hello.")
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     await orch.start_session()
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     assert all(r.status == "pending" for r in rows)
 
 
@@ -161,7 +161,7 @@ async def test_start_agent_conversation_sets_record_in_progress(
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     session = await orch.start_session()
     await orch.start_agent_conversation(session.id, coo_id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec = next(r for r in rows if r.root_agent_id == coo_id)
     assert coo_rec.status == "in_progress"
 
@@ -207,7 +207,7 @@ async def test_start_agent_conversation_coo_stack_is_coo_id(
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     session = await orch.start_session()
     await orch.start_agent_conversation(session.id, coo_id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec = next(r for r in rows if r.root_agent_id == coo_id)
     assert json.loads(coo_rec.navigation_stack) == [coo_id]
 
@@ -234,7 +234,7 @@ async def test_start_agent_conversation_n1_stack_is_n1_id(
     await orch.complete_current_agent(session.id, coo_id)
     await orch.validate_team(session.id, coo_id)
     await orch.start_agent_conversation(session.id, n1_id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     n1_rec = next(r for r in rows if r.root_agent_id == n1_id)
     assert json.loads(n1_rec.navigation_stack) == [n1_id]
 
@@ -268,7 +268,7 @@ async def test_reply_appends_to_conversation_history(
     session = await orch.start_session()
     await orch.start_agent_conversation(session.id, coo_id)
     await orch.reply(session.id, coo_id, "Change my name.")
-    rows = (await async_session.exec(select(MessageTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(MessageTable))).all()
     # context inject + LLM response + user message + LLM response = 4
     assert len(rows) >= 2
 
@@ -288,12 +288,10 @@ async def test_start_agent_conversation_resumes_in_progress_record(
     await orch.start_agent_conversation(session.id, coo_id)
 
     # Get conversation ID and message count
-    rows_before = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows_before = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec_before = next(r for r in rows_before if r.root_agent_id == coo_id)
     conv_id_before = coo_rec_before.active_conversation_id
-    msg_count_before = len(
-        (await async_session.exec(select(MessageTable))).all()  # type: ignore[call-overload]
-    )
+    msg_count_before = len((await async_session.exec(select(MessageTable))).all())
 
     # Call start_agent_conversation again (in_progress resume)
     response = await orch.start_agent_conversation(session.id, coo_id)
@@ -302,14 +300,12 @@ async def test_start_agent_conversation_resumes_in_progress_record(
     assert response != ""
 
     # conversation_id must not have changed
-    rows_after = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows_after = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec_after = next(r for r in rows_after if r.root_agent_id == coo_id)
     assert coo_rec_after.active_conversation_id == conv_id_before
 
     # At least one new message added
-    msg_count_after = len(
-        (await async_session.exec(select(MessageTable))).all()  # type: ignore[call-overload]
-    )
+    msg_count_after = len((await async_session.exec(select(MessageTable))).all())
     assert msg_count_after > msg_count_before
 
 
@@ -370,7 +366,7 @@ async def test_complete_current_agent_updates_navigation_stack(
     await orch.validate_team(session.id, coo_id)
     await orch.start_agent_conversation(session.id, n1_id)
     await orch.complete_current_agent(session.id, n1_id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     n1_rec = next(r for r in rows if r.root_agent_id == n1_id)
     assert json.loads(n1_rec.navigation_stack) == [n1_id, n2_id]
 
@@ -490,7 +486,7 @@ async def test_complete_current_agent_navigation_stack_empty_when_subtree_done(
     await orch.start_agent_conversation(session.id, n1_id)
     await orch.complete_current_agent(session.id, n1_id)
     await orch.complete_current_agent(session.id, n1_id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     n1_rec = next(r for r in rows if r.root_agent_id == n1_id)
     assert json.loads(n1_rec.navigation_stack) == []
 
@@ -509,7 +505,7 @@ async def test_complete_current_agent_leaf_n1_returns_summary_immediately(
     await orch.start_agent_conversation(session.id, coo_id)
     response = await orch.complete_current_agent(session.id, coo_id)
     assert response == "Here is my summary."
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec = next(r for r in rows if r.root_agent_id == coo_id)
     assert json.loads(coo_rec.navigation_stack) == []
 
@@ -529,7 +525,7 @@ async def test_complete_current_agent_coo_returns_summary(
     await orch.start_agent_conversation(session.id, coo_id)
     response = await orch.complete_current_agent(session.id, coo_id)
     assert response == "Here is my COO summary."
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec = next(r for r in rows if r.root_agent_id == coo_id)
     assert json.loads(coo_rec.navigation_stack) == []
 
@@ -561,7 +557,7 @@ async def test_complete_current_agent_active_agent_id_is_root_when_subtree_done(
     await orch.start_agent_conversation(session.id, n1_id)
     await orch.complete_current_agent(session.id, n1_id)  # opens N-2
     await orch.complete_current_agent(session.id, n1_id)  # N-2 leaf → final summary
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     n1_rec = next(r for r in rows if r.root_agent_id == n1_id)
     assert json.loads(n1_rec.navigation_stack) == []
     assert n1_rec.active_agent_id == n1_id
@@ -640,7 +636,7 @@ async def test_validate_team_marks_record_validated(
     await orch.start_agent_conversation(session.id, coo_id)
     await orch.complete_current_agent(session.id, coo_id)
     await orch.validate_team(session.id, coo_id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec = next(r for r in rows if r.root_agent_id == coo_id)
     assert coo_rec.status == "validated"
 
@@ -736,7 +732,7 @@ async def test_skip_agent_marks_record_skipped(
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     session = await orch.start_session()
     await orch.skip_agent(session.id, coo_id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec = next(r for r in rows if r.root_agent_id == coo_id)
     assert coo_rec.status == "skipped"
 
@@ -846,7 +842,7 @@ async def test_skip_all_marks_all_records_skipped(
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     session = await orch.start_session()
     await orch.skip_all(session.id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     assert all(r.status == "skipped" for r in rows)
 
 
@@ -860,7 +856,7 @@ async def test_skip_all_triggers_go_live(
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     session = await orch.start_session()
     await orch.skip_all(session.id)
-    spec_rows = (await async_session.exec(select(AgentSpecTable))).all()  # type: ignore[call-overload]
+    spec_rows = (await async_session.exec(select(AgentSpecTable))).all()
     assert all(r.is_paused is False for r in spec_rows)
 
 
@@ -884,7 +880,7 @@ async def test_go_live_sets_all_is_paused_false(
     await orch.start_agent_conversation(session.id, coo_id)
     await orch.complete_current_agent(session.id, coo_id)
     await orch.validate_team(session.id, coo_id)
-    rows = (await async_session.exec(select(AgentSpecTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentSpecTable))).all()
     assert all(r.is_paused is False for r in rows)
 
 
@@ -903,7 +899,7 @@ async def test_go_live_sets_all_states_idle(
     await orch.start_agent_conversation(session.id, coo_id)
     await orch.complete_current_agent(session.id, coo_id)
     await orch.validate_team(session.id, coo_id)
-    rows = (await async_session.exec(select(AgentStateTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentStateTable))).all()
     assert all(r.status == AgentStatus.IDLE for r in rows)
 
 
@@ -997,7 +993,7 @@ async def test_apply_agent_updates_adds_skill(
     await orch.start_agent_conversation(session.id, coo_id)
     await orch.complete_current_agent(session.id, coo_id)
     await orch.validate_team(session.id, coo_id)
-    skill_rows = (await async_session.exec(select(SkillTable))).all()  # type: ignore[call-overload]
+    skill_rows = (await async_session.exec(select(SkillTable))).all()
     skill_names = [s.name for s in skill_rows]
     assert "New Skill" in skill_names
     spec_row = await async_session.get(AgentSpecTable, coo_id)
@@ -1033,7 +1029,7 @@ async def test_apply_agent_updates_removes_skill(
     await orch.start_agent_conversation(session.id, coo_id)
     await orch.complete_current_agent(session.id, coo_id)
     await orch.validate_team(session.id, coo_id)
-    skill_rows = (await async_session.exec(select(SkillTable))).all()  # type: ignore[call-overload]
+    skill_rows = (await async_session.exec(select(SkillTable))).all()
     skill_names = [s.name for s in skill_rows]
     assert "Synthesis" not in skill_names
     spec_row = await async_session.get(AgentSpecTable, coo_id)
@@ -1073,7 +1069,7 @@ async def test_apply_agent_updates_updates_skill_description(
     await orch.start_agent_conversation(session.id, coo_id)
     await orch.complete_current_agent(session.id, coo_id)
     await orch.validate_team(session.id, coo_id)
-    skill_rows = (await async_session.exec(select(SkillTable))).all()  # type: ignore[call-overload]
+    skill_rows = (await async_session.exec(select(SkillTable))).all()
     synthesis = next(s for s in skill_rows if s.name == "Synthesis")
     assert synthesis.description == "Updated description."
 
@@ -1230,7 +1226,7 @@ async def test_extraction_retry_on_invalid_json_succeeds(
     await orch.start_agent_conversation(session.id, coo_id)
     await orch.complete_current_agent(session.id, coo_id)
     await orch.validate_team(session.id, coo_id)
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     coo_rec = next(r for r in rows if r.root_agent_id == coo_id)
     assert coo_rec.status == "validated"
 
@@ -1273,7 +1269,7 @@ async def test_coo_only_org_start_session_creates_one_record(
     mock_complete = AsyncMock(return_value="Hello.")
     orch = _make_orchestrator(async_session, stub_prompt_loader, mock_complete)
     await orch.start_session()
-    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()  # type: ignore[call-overload]
+    rows = (await async_session.exec(select(AgentValidationRecordTable))).all()
     assert len(rows) == 1
     assert rows[0].root_agent_id == coo_only_org["coo_id"]
 

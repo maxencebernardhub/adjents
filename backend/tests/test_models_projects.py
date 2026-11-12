@@ -26,9 +26,9 @@ def make_project() -> Project:
 
 
 def test_project_status_all_values() -> None:
-    assert ProjectStatus.ACTIVE == "active"
-    assert ProjectStatus.COMPLETED == "completed"
-    assert ProjectStatus.CANCELLED == "cancelled"
+    assert ProjectStatus.ACTIVE.value == "active"
+    assert ProjectStatus.COMPLETED.value == "completed"
+    assert ProjectStatus.CANCELLED.value == "cancelled"
 
 
 def test_project_status_is_str_enum() -> None:
