@@ -1042,7 +1042,7 @@ list: Next steps → Step 4 → 4.7.
 | 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | ✅ `dac9168` |
 | 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | ✅ `ccff431` |
 | 6 | Tables | F17, F18, F23, F25, F55 | ✅ `6ed7c78` |
-| 7 | `AgentSpec` constraints | F3, F72, F53, F54 | — |
+| 7 | `AgentSpec` constraints | F3, F72, F53, F54 | ✅ `eadf81a` |
 | 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | — |
 | 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | — |
 | 10 | LLM client | F37 + F71, then F36; F51, F52, F56 | — |
@@ -1131,8 +1131,8 @@ check in block 6).
 
 - F19: `db/convert.py` (428 lines) → `db/convert/` package: `__init__` (shared
   conventions docstring, the 24 re-exports, `__all__` — needed under
-  `mypy --strict`, 92 lines), `agents` (151), `generator` (146: `BusinessContext`
-  + the 2 team setup models), `messaging` (67), `projects` (49), `deliverables`
+  `mypy --strict`, 92 lines), `agents` (151), `generator` (146: `BusinessContext` +
+  the 2 team setup models), `messaging` (67), `projects` (49), `deliverables`
   (39), `memory` (38). Callers unchanged (they import from `adjents.db.convert`).
   Pure refactor, checked: the 24 function ASTs are identical to the original;
   imports work in both orders (`team_setup` first or `convert` first).
@@ -1238,12 +1238,49 @@ check in block 6).
   5) and the dead `test_unused_import_unused` removed.
 - 384 tests; lint, typecheck green.
 
-**Stopped at:** block 6 done (end of the DB blocks; `/clear` planned here). Next:
-block 7 (`AgentSpec` constraints — F3 / Q1: `level ≥ 0`, interval in [300, 3600],
-`visual_character` in a reference `frozenset` (decision C: `AfterValidator`, type
-stays `str`), reference constants in `agents/models.py`; F72: shared `WorkHours`
-type with range checks used by `AgentSpec` and `BusinessContext`, overnight window
-accepted, start == end and `24:00` rejected (decision D); F53, F54 docstrings).
+### Block 7 — `AgentSpec` constraints (`eadf81a`)
+
+- Callers of steps 6–8 settled with the user before the tests (an invalid value,
+  stored silently until now, raises from block 7 on). Accepted and routed, no step
+  6–8 module touched: org generation — `_validate_structure` checks neither
+  `level ≥ 0` nor `work_hours`, so such LLM output leaves `generate()` as a raw
+  `ValidationError` after the paid call, without retry (→ 7.2); team setup /
+  reconfiguration — `_apply_agent_updates` writes `work_hours` unchecked through
+  `setattr`, then every `agent_spec_from_table` of that agent raises (→ 8.2);
+  interview — an off-format `work_hours` raises `InterviewError` (→ 6.3).
+- `WorkHours`, option 1 of 2 (chosen with the user): `StringConstraints(pattern=...)`
+  holding the ranges, plus an `AfterValidator` rejecting equal bounds. Rejected: one
+  parsing `AfterValidator` (readable messages, but nothing in the JSON Schema and
+  more code to test). Probes: pydantic-core's `\d` matches any Unicode digit
+  (Arabic-Indic digits accepted) → `[0-9]`; its `$` rejects a trailing newline.
+  Checked in the `anthropic` 2.1.0 sources (`lib/_parse/_transform.py`): structured
+  outputs do not enforce `pattern` / `minimum` / `maximum` — the SDK moves them into
+  the field description, validation stays client-side (→ noted in 4b.1).
+- F3, F72 (decisions C, D): `agents/models.py` gets `VISUAL_CHARACTERS`,
+  `SCHEDULER_INTERVAL_MIN` / `_MAX` and `WorkHours`; `AgentSpec.level` `ge=0`,
+  interval in [300, 3600], `visual_character` checked by an `AfterValidator` (type
+  stays `str`), `work_hours: WorkHours | None`; `BusinessContext.work_hours` uses
+  the same type. Callers keep their local copies until 7.2 / 8.3; a guard test
+  checks that org generation's `VALID_VISUAL_CHARACTERS` equals the reference set
+  (remove it in 7.2).
+- F53, F54: module and `AgentStatus` docstrings (checked: `org_generation.py:436`,
+  `team_setup.py:598`, `reconfiguration.py:189`). `AgentSpec` docstring: the
+  constraints define valid data, reacting to invalid LLM output stays the writer's
+  policy; assignment and direct table writes bypass them.
+- Red: collection `ImportError`; a stubbed copy (no constraint) showed the 24
+  rejection cases `DID NOT RAISE`, the acceptance cases green at once
+  (characterization). Fixtures with now-invalid values fixed
+  (`test_models_agents.py`, `test_db_convert_agents.py`). The block 6 drift test
+  then failed wrongly: `Annotated[...] | None` is a `typing.Union`, not a
+  `types.UnionType` → `_is_nullable` handles both.
+- Seen, not done (outside 4.7): lax mode accepts `level="1"` and `level=True`.
+- `agents/models.py` 163 → 231 lines; 430 tests; lint, typecheck green.
+
+**Stopped at:** block 7 done. Next: block 8 (other model contracts — F4
+`AwareDatetime`: present the caller impact of steps 6–8 before acting; F5
+`BlockingQuestion` consistency (decision G); F61 `JsonValue` + `allow_nan=False` in
+the 2 dict `json.dumps`; F62 `hide_input_in_errors=True` on every domain model
+(decision F); F1, F9, F12; F26 naive date).
 
 ---
 
@@ -1398,7 +1435,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     `model_validate`
   - ✅ (block 2, `4eb0d2a`, `e0508ff`) F2 (Q2): `mypy --strict adjents/ tests/` in Makefile + CI; all 53 test errors
     fixed, including the tests of steps 7 and 8
-  - F3 (Q1): `AgentSpec` invariants in the model (`Field` constraints / validators)
+  - ✅ (block 7, `eadf81a`) F3 (Q1): `AgentSpec` invariants in the model (`Field` constraints / validators)
     and reference constants in `agents/models.py`; callers rewired in 7.2 / 8.3.
     F72 (Q1 scope extended): one shared `WorkHours` type with range checks (not a
     format-only pattern), used by `AgentSpec` and `BusinessContext`; an end before
@@ -1503,7 +1540,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   - F53, F54, F55: docstrings fixed — skills also created by team setup /
     reconfiguration (`agents/models.py`); org generation sets `PAUSED` at creation
     (`AgentStatus`); the interview also updates a loaded row in place
-    (`db/tables.py`) — F55 ✅ (block 6, `6ed7c78`); F53, F54 in block 7
+    (`db/tables.py`) — F55 ✅ (block 6, `6ed7c78`); F53, F54 ✅ (block 7, `eadf81a`)
   - F56: `llm/errors.py` docstring — retry loops cover invalid output (JSON, schema,
     structure), never LLM errors (ADR 0012 sentence: step 4b.2)
   - F58 (with F33 / F44): `_parse_frontmatter` docstring matches the rewritten parser
@@ -1529,7 +1566,10 @@ Branch: `feat/structured-outputs` — before steps 6, 7, 8, which adopt it
   compatibility with adaptive thinking and the JSON Schema features supported —
   including the `Field` constraints added to `AgentSpec` in step 4.7 (`ge` / `le`,
   `pattern`): which keywords the provider accepts, and what the SDK does with
-  unsupported ones (checked in its sources)
+  unsupported ones (checked in its sources). Anthropic checked in step 4.7 (block 7):
+  `anthropic` 2.1.0 drops `pattern`, `minimum`, `maximum` from the strict schema and
+  appends them to the field description (`lib/_parse/_transform.py`), so Pydantic
+  stays the validator; OpenAI and Gemini not checked
 - [ ] 4b.2 **Amend** ADR 0012 (the neutral contract gains a method); the same
   amendment corrects §4 "their retry loops only catch `JSONDecodeError`" — org
   generation also retries on schema / structure errors, LLM errors are still never
@@ -1594,7 +1634,10 @@ Branch: `refactor/walkthrough-interview`
   LLM-extracted business data (`interview.py:226-229`, F62 — counters, never content);
   a non-object extraction JSON (`[]`, `"text"`) raises `TypeError` / `AttributeError`
   on `data.pop` instead of `InterviewError` (`interview.py:211-218`, checked;
-  probably moot with structured outputs)
+  probably moot with structured outputs). Since step 4.7 (block 7), an off-format
+  `work_hours` in the extraction JSON (shared `WorkHours` type) raises
+  `InterviewError` at the end of the interview — decide: retry, or `null` with a
+  warning
 - [ ] 6.4 Docstrings + comments
 - [ ] 6.5 Spec review (against the 2026-05-20 Feature Brief; LLM calls against ADR
   0012) + code review, fixes
@@ -1613,7 +1656,12 @@ Branch: `refactor/walkthrough-org-generation`
   constants from `agents/models.py` (step 4.7, Q1) instead of local literals. In the
   split test files, type the `async_session` fixture parameter as `AsyncSession`
   instead of `object` + `session = async_session` + `assert isinstance(...)` (13
-  tests; seen in step 4.7, block 2)
+  tests; seen in step 4.7, block 2). Since step 4.7 (block 7), `AgentSpec` rejects a
+  negative `level` and an invalid `work_hours`, which `_validate_structure` does not
+  check: such output leaves `generate()` as a raw `ValidationError` after the paid
+  call, without retry → validate through the domain model inside the retry loop
+  (errors fed back to the LLM, `OrgGenerationError` last); remove the
+  `VALID_VISUAL_CHARACTERS` guard test in `test_models_agents.py`
 - [ ] 7.3 Prompt audit for Claude 5.5 (e.g. `/claude-api prompt-audit`); adopt
   structured outputs (step 4b); the
   Generator assigns each agent's reasoning tier (step 5.1b) — prompt + validation.
@@ -1636,7 +1684,10 @@ Branch: `refactor/walkthrough-team-setup`
   `escalation_rules` in `_apply_agent_updates`. Same root cause: `_apply_agent_updates`
   (both copies) and the state updates `setattr` on SQLModel table rows, which never
   validate — route updates through the `AgentSpec` domain model (constraints from
-  step 4.7) before writing the row (step 4.1 walkthrough)
+  step 4.7) before writing the row (step 4.1 walkthrough). Until then, an invalid
+  `work_hours` written through `setattr` makes every later `agent_spec_from_table`
+  of that agent raise (step 4.7, block 7); test: an invalid `work_hours` update is
+  rejected before the write
 - [ ] 8.3 B2: split `team_setup.py` (851 lines) into a package; extract the logic
   shared with `reconfiguration.py` (310 lines, past the 300-line review trigger) —
   extraction LLM call + `_apply_agent_updates` + persistence helpers + the duplicated
