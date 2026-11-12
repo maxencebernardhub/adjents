@@ -20,5 +20,5 @@ lint:
 	cd frontend && pnpm lint && pnpm format:check
 
 typecheck:
-	cd backend && uv run mypy --strict adjents/
+	cd backend && uv run mypy --strict adjents/ tests/
 	cd frontend && pnpm typecheck
