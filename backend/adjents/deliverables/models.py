@@ -5,7 +5,7 @@ A deliverable is a file an agent produces, written under `data/outputs/`
 
 Place in the flow: domain / API layer (ADR 0002). No code produces or reads it yet:
 it waits for the agent loop and the Deliverables feature. A persistence table and
-conversion functions exist in `db/tables.py` and `db/convert.py`.
+conversion functions exist in `db/tables.py` and `db/convert/deliverables.py`.
 
 Entry points: `Deliverable`.
 

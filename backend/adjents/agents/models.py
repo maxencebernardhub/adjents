@@ -8,8 +8,8 @@ Place in the flow: domain / API layer (ADR 0002) — plain Pydantic models with 
 database import. `GeneratorOrgGeneration` creates every `AgentSpec`, `Skill` and
 `AgentState` (agents start paused); team setup and reconfiguration read and update
 them; `utils/agent_context.py` renders them into the agent context message.
-Persistence goes through `db/convert.py` and `db/tables.py`. `BlockingQuestion`
-has no producer yet: it is defined ahead of the agent loop.
+Persistence goes through `db/convert/agents.py` and `db/tables.py`.
+`BlockingQuestion` has no producer yet: it is defined ahead of the agent loop.
 
 Entry points: `AgentSpec`, `AgentState`, `AgentStatus`, `Skill`,
 `BlockingQuestion`.

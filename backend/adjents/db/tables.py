@@ -11,8 +11,8 @@ Table classes do not validate, not even at construction: only SQL constraints
 (`NOT NULL`, primary key) apply, at commit. Validation happens in the domain
 models.
 
-Place in the flow: `db/convert.py` builds rows from domain models and turns rows
-back into domain models. The orchestrators add rows to their `AsyncSession`
+Place in the flow: the `db/convert/` package builds rows from domain models and
+turns rows back into domain models. The orchestrators add rows to their `AsyncSession`
 (`generator/interview.py`, `generator/org_generation.py`,
 `generator/team_setup.py`, `agents/reconfiguration.py`); all but org generation
 also query these classes with `select(...)`, and team setup and reconfiguration

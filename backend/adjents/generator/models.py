@@ -7,7 +7,7 @@ Place in the flow: domain / API layer (ADR 0002). `GeneratorInterview`
 (`generator/interview.py`) builds it once the interview is complete, from the JSON
 returned by the `generator/extract_business_context` prompt, and persists it;
 `GeneratorOrgGeneration` (`generator/org_generation.py`) reads it to generate the
-org. Persistence goes through `db/convert.py`.
+org. Persistence goes through `db/convert/generator.py`.
 
 Entry points: `BusinessContext`.
 

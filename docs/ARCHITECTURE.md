@@ -415,8 +415,9 @@ They are deliberately kept free of persistence concerns.
 
 Persistence is handled by a **separate set of SQLModel table classes** in
 `backend/adjents/db/tables.py`. Each table class mirrors a domain model but inherits
-from `SQLModel` with `table=True`. Explicit conversion functions in
-`backend/adjents/db/convert.py` translate between the two layers.
+from `SQLModel` with `table=True`. Explicit conversion functions in the
+`backend/adjents/db/convert/` package (one module per domain module, all
+re-exported by the package) translate between the two layers.
 
 **Why two separate layers** (see ADR 0002 for full rationale):
 

@@ -5,7 +5,7 @@ global knowledge base (ARCHITECTURE §7). A `Memory` is one entry of either.
 
 Place in the flow: domain / API layer (ADR 0002). No code produces or reads it yet:
 it waits for the memory layer. A persistence table and conversion functions exist
-in `db/tables.py` and `db/convert.py`.
+in `db/tables.py` and `db/convert/memory.py`.
 
 Entry points: `Memory`.
 

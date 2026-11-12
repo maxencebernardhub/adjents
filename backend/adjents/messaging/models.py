@@ -7,7 +7,7 @@ communicate only by exchanging messages, never by calling each other (ARCHITECTU
 Place in the flow: domain / API layer (ADR 0002). Today only the Generator interview
 (`generator/interview.py`) builds `Message` and `Conversation` objects; team setup
 and reconfiguration write message rows directly through `db/tables.py`. Persistence
-goes through `db/convert.py`.
+goes through `db/convert/messaging.py`.
 
 Entry points: `Message`, `Conversation`.
 

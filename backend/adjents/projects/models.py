@@ -6,7 +6,7 @@ shape is known and the database schema stays complete (same reasoning as ADR 000
 
 Place in the flow: domain / API layer (ADR 0002). No code produces or reads them yet.
 A persistence table and conversion functions exist in `db/tables.py` and
-`db/convert.py`.
+`db/convert/projects.py`.
 
 Entry points: `Project`, `ProjectStatus`.
 
