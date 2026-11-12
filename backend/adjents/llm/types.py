@@ -5,6 +5,8 @@ these types, never a provider's own vocabulary; each LLM client maps them to its
 provider's request parameters. Today only `AnthropicClient` exists; the OpenAI and
 Gemini clients of step 10 implement the same contract.
 
+Entry point: `Effort`, the type of the required `effort` argument of `complete()`.
+
 Related ADRs: 0012 (provider-neutral LLM call contract).
 """
 
