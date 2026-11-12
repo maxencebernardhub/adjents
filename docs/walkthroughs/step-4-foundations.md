@@ -1125,3 +1125,91 @@ Out of scope, recorded for other steps:
 - Priority inside 4.7: F60 and F66 first (the two 🟠 that 4.7 handles).
 - Milestone table, "Code Review" column: ⚠️ (4.7) for "Core Pydantic models" and
   "Database layer"; "LLM router" and "LLM clients" unchanged until step 10.
+
+---
+
+## 4.7 — Fixes
+
+Every finding routed to 4.7 (walkthrough, 4.5, 4.6) fixed with TDD, in 11 blocks:
+failing tests first (or characterization tests, flagged as such), then the minimum
+code, then `make lint && make typecheck && make test`; one commit or more per block,
+then a `docs(state)` commit. The details of each block — decisions taken on the way,
+probes, red and characterization tests, file sizes — are in `PROJECT_STATE.md`,
+"Last session — 2026-11-12 (step 4, part 2 — 4.7)"; the decisions are also in its
+Decisions log.
+
+### Blocks
+
+| # | Block | Findings | Commits | Tests after |
+| --- | --- | --- | --- | ---: |
+| 1 | Router: API key | F60, F40, F52 (router) | `2928e43` | 292 |
+| 2 | mypy on `tests/` | F2, F65 | `4eb0d2a`, `e0508ff` | 292 |
+| 3 | `db/convert.py` → `db/convert/` package | F19, F26 (imports) | `ebaf327` | 292 |
+| 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | `dac9168` | 310 |
+| 5 | `conftest` on the factories + guard tests | F66, F27, F26 (corrupt JSON, unknown enum) | `ccff431` | 312 |
+| 6 | Tables | F17, F18, F23, F25, F55 | `6ed7c78` | 384 |
+| 7 | `AgentSpec` constraints | F3, F72, F53, F54 | `eadf81a` | 430 |
+| 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | `0737b88` | 563 |
+| 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | `62adcb9` | 583 |
+| 10 | LLM client | F37, F71, F36, F51, F52 (`llm/`), F56 | `a65a60f`, `dee49e4`, `6ed84a3`, `c3d11f2` | 593 |
+| 11 | Docs | F7, F21, F35, F49 (ADR 0010 amendment), F57 | docs only | 593 |
+
+F10 (tautological model tests) was accepted as is, with no action. No module created
+or rewritten in 4.7 crosses the 300-line review trigger (largest: `agents/models.py`,
+265 lines). `generator/team_setup.py` (step 8 code, 4 lines added in block 8) stays
+at 855 lines until its split in 8.3.
+
+### Probes that shaped the fixes
+
+- Block 5: with `expire_on_commit=False`, `session.get()` after a commit serves stale
+  data only while the test holds a reference to the row (the identity map holds
+  unmodified objects weakly) → `populate_existing=True` on the roundtrip reads.
+- Block 6: SQLModel table defaults are Python-side only (identical DDL), so removing
+  them changes no existing database.
+- Block 7: pydantic-core's `\d` matches any Unicode digit → `[0-9]`; `anthropic`
+  2.1.0 structured outputs drop `pattern`, `minimum` and `maximum` from the strict
+  schema (`lib/_parse/_transform.py`), so Pydantic stays the validator.
+- Block 8: `JsonValue` accepts NaN → `allow_inf_nan=False`; `AwareDatetime` keeps
+  the offset it is given (no UTC normalization).
+- Block 9: `Path.read_text()` already normalizes `\r\n` and `\r`, so no line-ending
+  code was added.
+- Block 10: `ANTHROPIC_CUSTOM_HEADERS` can replace the `Authorization` header even
+  with an explicit key; the SDK accepts only an `httpx2.AsyncClient`; `MessageParam`
+  also has a `system` role (mid-conversation system messages).
+- Block 11: a SQLAlchemy `DateTime` column on SQLite drops the UTC offset, even with
+  `timezone=True` (the reason dates are stored as ISO strings); the sprite list is
+  written by hand in `org_generation.md`, not injected by code.
+
+### Corrections to earlier statements — 4.7
+
+1. Plan decision H: "`.gitignore` gets `data/*.db`" — `*.db` was already ignored (the
+   check had grepped "data" only). The environment template line was commented out
+   instead.
+2. 4.3, F33: "with CRLF line endings the frontmatter is sent to the LLM" — true when
+   `_parse_frontmatter` is called directly (as the probe did), false through
+   `PromptLoader`, whose `read_text()` normalizes line endings.
+3. 4.6, F60: the recommendation (reject whitespace and control characters) was
+   extended to non-ASCII characters; the probe showed that only a newline makes the
+   HTTP layer quote the key, the others reach the server as is.
+4. 4.3, Q8 sketch: `_to_message_params` had to reject `system` explicitly —
+   `MessageParam` accepts three roles in `anthropic` 2.1.0, not two.
+5. ARCHITECTURE §4 repeated the `Message` sketch of §3 with the same inaccuracies
+   (`"system"` sentinel, `dict[str, Any]`, naive `datetime`); both were fixed.
+
+### Routed to other steps (found during 4.7)
+
+- 4b.1: Anthropic structured outputs and the `AgentSpec` constraints (block 7).
+- 4b.2: the ADR 0012 amendment also states the `ValueError` on an unknown message
+  role (block 10).
+- 6.3: an off-format `work_hours` from the extraction raises `InterviewError`
+  (block 7).
+- 7.2: org generation lets an invalid `level` / `work_hours` escape as a raw
+  `ValidationError` after the paid call; remove the visual-character guard test;
+  the `async_session: object` indirection in its tests (blocks 2, 7).
+- 8.2 / 8.3: `_apply_agent_updates` writes `work_hours` unchecked; callers keep
+  local copies of the reference constants until rewired (block 7).
+- 8.6: `scripts/` is not checked by mypy (block 2).
+- Technical debt: `CHROMA_PATH` relative to the working directory (block 4); no UTC
+  normalization of domain datetimes (block 8); SDK environment variables
+  `ANTHROPIC_BASE_URL` / `ANTHROPIC_CUSTOM_HEADERS` (block 10). Seen, not done: lax
+  mode accepts `level="1"` and `level=True` (block 7).
