@@ -9,16 +9,18 @@ SQLAlchemy declarative classes, hence the `metadata_json` columns.
 
 Table classes do not validate, not even at construction: only SQL constraints
 (`NOT NULL`, primary key) apply, at commit. Validation happens in the domain
-models.
+models. No column has a default value: a field left out of a constructor is
+reported by mypy, and fails at commit with `NOT NULL` unless its column is
+nullable. Columns are nullable exactly where the domain field accepts `None`.
 
 Place in the flow: the `db/convert/` package builds rows from domain models and
-turns rows back into domain models. The orchestrators add rows to their `AsyncSession`
-(`generator/interview.py`, `generator/org_generation.py`,
+turns rows back into domain models. The orchestrators add rows to their
+`AsyncSession` (`generator/interview.py`, `generator/org_generation.py`,
 `generator/team_setup.py`, `agents/reconfiguration.py`); all but org generation
-also query these classes with `select(...)`, and team setup and reconfiguration
-build some rows directly and update loaded rows in place. Importing this module
-registers every table in `SQLModel.metadata`, which `create_all` needs
-(`db/engine.py`, `tests/conftest.py`).
+also query these classes with `select(...)` and update loaded rows in place, and
+team setup and reconfiguration build some rows directly. Importing this module
+registers every table in `SQLModel.metadata`, which `create_all` needs; `db/engine.py`
+imports it.
 
 Entry points: the 12 `*Table` classes.
 
@@ -37,15 +39,15 @@ class AgentSpecTable(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     level: int
-    parent_id: str | None = Field(default=None)
-    domain: str | None = Field(default=None)
+    parent_id: str | None
+    domain: str | None
     role_description: str
-    responsibilities: str = Field(default="[]")  # JSON: list[str]
-    skill_ids: str = Field(default="[]")  # JSON: list[str]
-    escalation_rules: str = Field(default="[]")  # JSON: list[str]
+    responsibilities: str  # JSON: list[str]
+    skill_ids: str  # JSON: list[str]
+    escalation_rules: str  # JSON: list[str]
     scheduler_interval_seconds: int
-    work_hours: str | None = Field(default=None)
-    is_paused: bool = Field(default=False)
+    work_hours: str | None
+    is_paused: bool
     visual_character: str
     created_at: str  # ISO 8601
 
@@ -57,8 +59,8 @@ class AgentStateTable(SQLModel, table=True):
 
     agent_id: str = Field(primary_key=True)
     status: str  # AgentStatus value
-    current_task_summary: str | None = Field(default=None)
-    meeting_with: str = Field(default="[]")  # JSON: list[str]
+    current_task_summary: str | None
+    meeting_with: str  # JSON: list[str]
     updated_at: str  # ISO 8601
 
 
@@ -70,9 +72,9 @@ class SkillTable(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     description: str
-    inputs: str = Field(default="[]")  # JSON: list[str]
-    outputs: str = Field(default="[]")  # JSON: list[str]
-    requires_human_review: bool = Field(default=False)
+    inputs: str  # JSON: list[str]
+    outputs: str  # JSON: list[str]
+    requires_human_review: bool
 
 
 class MessageTable(SQLModel, table=True):
@@ -84,8 +86,8 @@ class MessageTable(SQLModel, table=True):
     from_agent: str
     to_agent: str
     content: str
-    metadata_json: str = Field(default="{}")  # JSON: dict[str, Any]
-    parent_message_id: str | None = Field(default=None)
+    metadata_json: str  # JSON: dict[str, Any]
+    parent_message_id: str | None
     created_at: str  # ISO 8601
 
 
@@ -95,8 +97,8 @@ class ConversationTable(SQLModel, table=True):
     __tablename__ = "conversations"
 
     id: str = Field(primary_key=True)
-    participant_agents: str = Field(default="[]")  # JSON: list[str]
-    message_ids: str = Field(default="[]")  # JSON: list[str]
+    participant_agents: str  # JSON: list[str]
+    message_ids: str  # JSON: list[str]
     started_at: str  # ISO 8601
 
 
@@ -106,9 +108,9 @@ class MemoryTable(SQLModel, table=True):
     __tablename__ = "memories"
 
     id: str = Field(primary_key=True)
-    agent_id: str | None = Field(default=None)
+    agent_id: str | None
     content: str
-    metadata_json: str = Field(default="{}")  # JSON: dict[str, Any]
+    metadata_json: str  # JSON: dict[str, Any]
     created_at: str  # ISO 8601
 
 
@@ -119,7 +121,7 @@ class DeliverableTable(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     agent_id: str
-    project_id: str | None = Field(default=None)
+    project_id: str | None
     title: str
     file_path: str
     created_at: str  # ISO 8601
@@ -133,10 +135,10 @@ class ProjectTable(SQLModel, table=True):
     id: str = Field(primary_key=True)
     title: str
     objective: str
-    deliverable_descriptions: str = Field(default="[]")  # JSON: list[str]
-    deadline: str | None = Field(default=None)  # ISO 8601
+    deliverable_descriptions: str  # JSON: list[str]
+    deadline: str | None  # ISO 8601
     lead_agent_id: str
-    contributor_agent_ids: str = Field(default="[]")  # JSON: list[str]
+    contributor_agent_ids: str  # JSON: list[str]
     status: str  # ProjectStatus value
     created_at: str  # ISO 8601
 
@@ -149,11 +151,11 @@ class BlockingQuestionTable(SQLModel, table=True):
     id: str = Field(primary_key=True)
     agent_id: str
     question: str
-    context: str | None = Field(default=None)
-    answered: bool = Field(default=False)
-    answer: str | None = Field(default=None)
+    context: str | None
+    answered: bool
+    answer: str | None
     created_at: str  # ISO 8601
-    answered_at: str | None = Field(default=None)  # ISO 8601
+    answered_at: str | None  # ISO 8601
 
 
 class BusinessContextTable(SQLModel, table=True):
@@ -163,21 +165,21 @@ class BusinessContextTable(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     conversation_id: str
-    business_name: str | None = Field(default=None)
+    business_name: str | None
     founder_name: str
     language: str
     core_activity: str
-    legal_status: str | None = Field(default=None)
-    target_clients: str = Field(default="[]")  # JSON: list[str]
-    domains_with_human_coverage: str = Field(default="[]")  # JSON: list[str]
-    domains_to_staff: str = Field(default="[]")  # JSON: list[str]
-    tasks_to_delegate: str = Field(default="[]")  # JSON: list[str]
-    tasks_user_keeps: str = Field(default="[]")  # JSON: list[str]
-    financial_goals: str | None = Field(default=None)
-    existing_tools: str = Field(default="[]")  # JSON: list[str]
+    legal_status: str | None
+    target_clients: str  # JSON: list[str]
+    domains_with_human_coverage: str  # JSON: list[str]
+    domains_to_staff: str  # JSON: list[str]
+    tasks_to_delegate: str  # JSON: list[str]
+    tasks_user_keeps: str  # JSON: list[str]
+    financial_goals: str | None
+    existing_tools: str  # JSON: list[str]
     autonomy_preference: str
-    work_hours: str | None = Field(default=None)
-    additional_context: str | None = Field(default=None)
+    work_hours: str | None
+    additional_context: str | None
     created_at: str  # ISO 8601
 
 
@@ -188,8 +190,8 @@ class ValidationSessionTable(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     started_at: str  # ISO 8601
-    completed_at: str | None = Field(default=None)
-    skipped: bool = Field(default=False)
+    completed_at: str | None  # ISO 8601
+    skipped: bool
 
 
 class AgentValidationRecordTable(SQLModel, table=True):
@@ -201,9 +203,9 @@ class AgentValidationRecordTable(SQLModel, table=True):
     session_id: str
     root_agent_id: str
     status: str  # AgentValidationStatus value
-    active_agent_id: str | None = Field(default=None)
-    active_conversation_id: str | None = Field(default=None)
-    navigation_stack: str = Field(default="[]")  # JSON: list[str]
-    conversation_ids: str = Field(default="[]")  # JSON: list[str]
-    visited_agent_ids: str = Field(default="[]")  # JSON: list[str]
-    validated_at: str | None = Field(default=None)  # ISO 8601
+    active_agent_id: str | None
+    active_conversation_id: str | None
+    navigation_stack: str  # JSON: list[str]
+    conversation_ids: str  # JSON: list[str]
+    visited_agent_ids: str  # JSON: list[str]
+    validated_at: str | None  # ISO 8601
