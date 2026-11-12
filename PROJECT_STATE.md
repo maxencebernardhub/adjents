@@ -1038,7 +1038,7 @@ list: Next steps → Step 4 → 4.7.
 | --- | --- | --- | --- |
 | 1 | Router: API key | F60, F40, F52 (router) | ✅ `2928e43` |
 | 2 | mypy on `tests/` | F2, F65 | ✅ `4eb0d2a`, `e0508ff` |
-| 3 | `db/convert.py` → `db/convert/` package | F19, F26 (imports) | — |
+| 3 | `db/convert.py` → `db/convert/` package | F19, F26 (imports) | ✅ `ebaf327` |
 | 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | — |
 | 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | — |
 | 6 | Tables | F17, F18, F23, F25, F55 | — |
@@ -1125,10 +1125,31 @@ check in block 6).
   `test_generator_org_generation.py`), 8.6 (`scripts/` not checked by mypy).
 - 292 tests; lint, typecheck green.
 
-**Stopped at:** block 2 done. Next: block 3 (F19 — split `db/convert.py` into a
-`db/convert/` package per domain, re-exported from `__init__`; split
-`test_db_convert.py` into flat `test_db_convert_<domain>.py` files (decision B);
-F26 module-level imports).
+### Block 3 — `db/convert/` package (`ebaf327`)
+
+- F19: `db/convert.py` (428 lines) → `db/convert/` package: `__init__` (shared
+  conventions docstring, the 24 re-exports, `__all__` — needed under
+  `mypy --strict`, 92 lines), `agents` (151), `generator` (146: `BusinessContext`
+  + the 2 team setup models), `messaging` (67), `projects` (49), `deliverables`
+  (39), `memory` (38). Callers unchanged (they import from `adjents.db.convert`).
+  Pure refactor, checked: the 24 function ASTs are identical to the original;
+  imports work in both orders (`team_setup` first or `convert` first).
+- Tests (decision B): `test_db_convert.py` → `test_db_convert_{agents,messaging,
+  memory,projects,deliverables,generator}.py`, each importing its submodule; the
+  18 tests identical to the original (AST compared, local imports aside). F26
+  (imports part): table imports at module level.
+- References updated: the 6 model module docstrings point to their submodule,
+  `db/tables.py` to the package, ARCHITECTURE §3 (persistence layer). Specs,
+  reviews, walkthrough and earlier PROJECT_STATE entries left as is (past state);
+  ADR 0002 already says "`convert.py` (or equivalent)".
+- Deviation from the plan: no `_json.py` helper (pure move); F61's `allow_nan=False`
+  only concerns the 2 dict `json.dumps` (`messaging`, `memory`) → decided in
+  block 8.
+- 292 tests; lint, typecheck green.
+
+**Stopped at:** block 3 done. Next: block 4 (engine factories — F14, F15, F46, F59,
+F67, F13, F68; new `test_db_engine.py`; decision E API; decision H: the environment
+template's relative `DATABASE_URL` and `data/*.db` in `.gitignore`).
 
 ---
 
@@ -1322,7 +1343,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     `"[]"`…) so an omission fails with `NOT NULL` instead of a silent value
   - F18: schema drift test (ADR 0002): domain fields == table columns, parametrized,
     with the `metadata` → `metadata_json` rename
-  - F19 (Q5): split `db/convert.py` (404 lines) into a `db/convert/` package per
+  - ✅ (block 3, `ebaf327`) F19 (Q5): split `db/convert.py` (404 lines) into a `db/convert/` package per
     domain, mirroring the domain modules
   - F21 (Q6): ARCHITECTURE §1 — remove "migrations (via SQLModel)"; §3 — fix
     "`fromisoformat` … timezone-aware" (a naive string stays naive)
@@ -1330,8 +1351,9 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     docstring); delete the dead `test_unused_import_unused`
   - F25: replace the SQLAlchemy-only table tests with constraint tests (`NOT NULL`
     rejections), alongside F18
-  - F26: `test_db_convert.py` — module-level imports; tests for a naive date, corrupt
-    JSON and an unknown enum value in a row
+  - F26: `test_db_convert.py` — module-level imports (✅ block 3, `ebaf327`); tests
+    for a naive date (block 8), corrupt JSON and an unknown enum value in a row
+    (block 5)
   - F27: one fixture decorator style in `conftest.py` (team setup fixtures move in
     8.3)
   - F32 (Q7): remove `LoadedPrompt.render()` and its 2 tests (fails on the prompts'
