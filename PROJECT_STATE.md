@@ -13,8 +13,8 @@ the Next steps plan below.
 | Feature | Feature Brief | Implementation Plan | TDD (tests → code) | Smoke Test | Spec Review | Code Review | Merged |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | Project scaffold | n/a | n/a | n/a | n/a | n/a | n/a | ✅ |
-| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | n/a | n/a | ✅ | n/a | ⚠️ (4.7) | ⚠️ (4.7) | ✅ |
-| Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | ⚠️ (4.7) | ⚠️ (4.7) | ✅ |
+| Core Pydantic models (`AgentSpec`, `AgentState`, `Message`, etc.) | n/a | n/a | ✅ | n/a | ✅ ² | ✅ ² | ✅ |
+| Database layer (SQLModel + SQLite) | n/a | n/a | ✅ | n/a | ✅ ² | ✅ ² | ✅ |
 | Generator Agent — interview | ✅ | ✅ | ✅ | ✅ | — (step 6) | ✅ ¹ | ✅ |
 | Generator Agent — org generation | ✅ | ✅ | ✅ | ✅ | — (step 7) | ✅ ¹ | ✅ |
 | Post-generation team setup (user ↔ agents) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (step 8) | ✅ |
@@ -36,6 +36,9 @@ the Next steps plan below.
 ¹ Informal subagent review in May 2026, no written report. A full written code review
 is re-run during the walkthrough step, since the code will change significantly
 (SDK upgrade, Claude 5.5 migration, file splits).
+
+² Reviewed in step 4.5 (spec) and 4.6 (code); step 4.7 fixed every finding routed to
+it. Findings routed to other steps (6–8, Technical debt) are tracked there.
 
 ---
 
@@ -1046,7 +1049,7 @@ list: Next steps → Step 4 → 4.7.
 | 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | ✅ `0737b88` |
 | 9 | `PromptLoader` | F32, F33, F44, F47, F34, F63, F70, F58 | ✅ `62adcb9` |
 | 10 | LLM client | F37 + F71, then F36; F51, F52, F56 | ✅ `a65a60f`, `dee49e4`, `6ed84a3`, `c3d11f2` |
-| 11 | Docs | F7, F21, F35, F49 (ADR 0010 amendment), F57; walkthrough "4.7 — Fixes" | — |
+| 11 | Docs | F7, F21, F35, F49 (ADR 0010 amendment), F57; walkthrough "4.7 — Fixes" | ✅ `0c1500f`, `9a6244f`, `31eae2e`, `361c854` |
 
 Order: F60 first (🟠, isolated); F2 next so mypy checks every test written
 afterwards; the `convert` split and the engine factories before F66, whose tests
@@ -1401,11 +1404,40 @@ check in block 6).
 - `anthropic_client.py` 159 → 188 lines, `errors.py` 75 → 81, `types.py` 16 → 18,
   `test_llm_anthropic.py` 342 → 562; 593 tests; lint, typecheck green.
 
-**Stopped at:** block 10 done. Next: block 11 (docs and 4.7 closure — F7, F21, F35,
-F57; F49 with the ADR 0010 amendment shown to the user before writing; check the §3
-model sketches against blocks 7–8 and report before acting; walkthrough "4.7 —
-Fixes"; Decisions log: A–I and every decision of blocks 1–10; 4.7 checked;
-Milestone columns: ask the user; "Stopped at" on the PR).
+### Block 11 — docs and 4.7 closure (`0c1500f`, `9a6244f`, `31eae2e`, `361c854`)
+
+- §3 sketches checked against the code after blocks 7–8 and reported first: 6
+  inaccuracies (constraints, `WorkHours`, `AwareDatetime`, `JsonValue`,
+  `BlockingQuestion` rule, `hide_input_in_errors`; "injected" sprite list).
+- Decided with the user, after a pros / cons review: sketches show types and rules in
+  comments, plus one paragraph of conventions shared by every model (option b;
+  rejected: exact copies of the declarations, no change); ADR 0010 amendment text
+  validated as drafted; `Message` docstring and the sentinels Technical debt entry
+  drop `"system"`; §9's last templating traces removed ("render with test variables"
+  bullet, "YAML frontmatter" heading); Milestone ✅ with a footnote.
+- `0c1500f` (`docs(architecture)`): F21 (§1 without migrations; §3 dates), F7
+  (`BusinessContext` section and serialization row, 6 list fields), F49 (§3), F57
+  (also in the copy of the `Message` sketch found in §4, fixed for consistency), F35
+  (§9 rewritten), sketches updated. `9a6244f` (`docs(adr)`): ADR 0010 amendment.
+  `31eae2e` (`docs(models)`): `Message` docstring. `361c854` (`docs(walkthrough)`):
+  section "4.7 — Fixes".
+- Probes: a SQLAlchemy `DateTime` column on SQLite drops the offset, even with
+  `timezone=True` (async engine from `make_engine`); `PromptLoader.get()` keeps
+  `[1, 2]` as a string, rejects an indented or `- item` line, keeps single quotes.
+  Checked: the sprite list in `org_generation.md` equals `VISUAL_CHARACTERS`; no
+  domain model field has a default; only `"user"`, agent ids and `"generator"` are
+  written to `from_agent` / `to_agent`.
+- Draft statements corrected before review: org generation does not copy
+  `work_hours` by code (the prompt makes it the default); frontmatter lists are not
+  rejected; `reconfiguration.py` (310) and `org_generation.py` (442) are also above
+  300 lines (step 7–8 modules, untouched by 4.7).
+- Closure check: the 51 findings routed to 4.7 in the walkthrough tables are all
+  handled (F10 accepted with no action); sub-parts checked in the code and tests,
+  not in the reports. Decisions log: 28 rows (plan with I, A–H, blocks 1–11).
+- 593 tests; lint, typecheck, markdownlint green.
+
+**Stopped at:** step 4.7 done (11 blocks). Next: push the branch and open the PR
+(`/pr`) on the user's request, then merge; next step: 4b (structured outputs).
 
 ---
 
@@ -1554,7 +1586,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
   Python source), ADR 0004 and ADR 0010, consistency between the 4.4 docstrings and
   the code. Rationale: avoid re-deriving known findings and de-duplicating them in
   4.7, while keeping an independent review
-- [ ] 4.7 Review findings together (walkthrough + 4.5 + 4.6), fix with TDD. Walkthrough
+- [x] 4.7 Review findings together (walkthrough + 4.5 + 4.6), fix with TDD. Walkthrough
   findings (details in `docs/walkthroughs/step-4-foundations.md`):
   - ✅ (block 8, `0737b88`) F1: tests based on `model_copy(update=...)` (no validation) rebuilt through
     `model_validate`
@@ -1568,7 +1600,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     tests
   - ✅ (block 8, `0737b88`) F4: `AwareDatetime` for every `datetime` field
   - ✅ (block 8, `0737b88`) F5: `BlockingQuestion` consistency `@model_validator` (ADR 0004 schema kept)
-  - F7: `BusinessContext` added to ARCHITECTURE §3 and to its serialization table
+  - ✅ (block 11) F7: `BusinessContext` added to ARCHITECTURE §3 and to its serialization table
     (6 list fields — confirmed in 4.2)
   - ✅ (block 8, `0737b88`) F9: tests for the "required but nullable" contract and a JSON-mode roundtrip.
     F61: `Message.metadata` / `Memory.metadata` typed `dict[str, JsonValue]`, and
@@ -1605,7 +1637,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     with the `metadata` → `metadata_json` rename
   - ✅ (block 3, `ebaf327`) F19 (Q5): split `db/convert.py` (404 lines) into a `db/convert/` package per
     domain, mirroring the domain modules
-  - F21 (Q6): ARCHITECTURE §1 — remove "migrations (via SQLModel)"; §3 — fix
+  - ✅ (block 11) F21 (Q6): ARCHITECTURE §1 — remove "migrations (via SQLModel)"; §3 — fix
     "`fromisoformat` … timezone-aware" (a naive string stays naive)
   - ✅ (block 6, `6ed7c78`) F23: `test_all_tables_exist` (12 tables, exact set
     instead of `issubset`,
@@ -1633,7 +1665,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     read the cache; no assertion on a real prompt's `model_hint`. F63: `get()`
     rejects keys resolving outside the prompts directory (`..`, absolute) with an
     `is_relative_to` check; `tmp_path` test
-  - F35 (Q7): ARCHITECTURE §9 "How prompts are loaded" rewritten — fixed system
+  - ✅ (block 11) F35 (Q7): ARCHITECTURE §9 "How prompts are loaded" rewritten — fixed system
     prompts + agent context in a message, no templating today, `PromptLoader(Path)`,
     `load_all()` not called at startup yet
   - ✅ (block 10, `a65a60f`) F37: 2-3 `AnthropicClient` tests through `httpx2.MockTransport` with the real SDK
@@ -1652,17 +1684,17 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     `"  "` direct or from the environment → `LLMConfigError`)
 
   From the 4.5 spec review (`docs/reviews/2026-10-29-foundations-spec-compliance.md`):
-  - F49 (with F35, Q7 scope extended): ARCHITECTURE §3 "rendered with the agent's
+  - ✅ (block 11) F49 (with F35, Q7 scope extended): ARCHITECTURE §3 "rendered with the agent's
     fields" fixed (fixed system prompts + agent context in a message); **amend** ADR
     0010 accordingly
-  - F57 (with F21 / F7): ARCHITECTURE §3 `Message` sketch — `"generator"` sentinel,
+  - ✅ (block 11) F57 (with F21 / F7): ARCHITECTURE §3 `Message` sketch — `"generator"` sentinel,
     no `"system"`
   - ✅ (block 10, `6ed84a3`) F51: test asserting the truncation WARNING (model,
     `stop_reason`, tokens, no content)
   - ✅ F52: `llm/types.py`, `llm/errors.py`, `router/router.py` module docstrings name
     their entry points; `router.py` says who builds the router — `router.py` ✅
     (block 1, `2928e43`); `llm/` ✅ (block 10, `c3d11f2`)
-  - F53, F54, F55: docstrings fixed — skills also created by team setup /
+  - ✅ F53, F54, F55: docstrings fixed — skills also created by team setup /
     reconfiguration (`agents/models.py`); org generation sets `PAUSED` at creation
     (`AgentStatus`); the interview also updates a loaded row in place
     (`db/tables.py`) — F55 ✅ (block 6, `6ed7c78`); F53, F54 ✅ (block 7, `eadf81a`)
@@ -1958,7 +1990,7 @@ Branch: `feat/llm-router` — full `/feature` workflow
   changes at runtime but lives in the "write-once" spec (ARCHITECTURE §3) → decided
   with the **agent loop** design (walkthrough finding F6, step 4.1)
 - `Message.from_agent` / `to_agent` mix agent IDs and sentinel strings (`"user"`,
-  `"system"`) → decided with the **MessageDispatcher** design (ARCHITECTURE §4)
+  `"generator"`) → decided with the **MessageDispatcher** design (ARCHITECTURE §4)
 - `Deliverable.file_path` is meant to be relative to `data/outputs/`, but nothing
   rejects `..` or absolute paths (path traversal once deliverables are written to
   disk) → **Deliverables feature**
@@ -2113,3 +2145,31 @@ Full ADRs in `docs/decisions/`. Summary:
 | 2026-11-10 | MIT kept for the public release; no external code contributions without a CLA; brand not licensed; license of future versions reviewed if a paid hosted version is prepared or traction makes a commercial clone plausible (ADR 0013) | Primary purpose is a public portfolio; in this market the code is not the moat (funded SaaS and MIT clones exist); sole copyright keeps relicensing open. Rejected: FSL, AGPL, Apache-2.0, BSL, custom licenses, no license |
 | 2026-11-10 | Repository public; `main` protected by a single ruleset (`protect-main`), never by a classic branch protection rule | Rulesets are GitHub's current mechanism; a classic rule stacks with the ruleset and its approval count blocks a solo maintainer |
 | 2026-11-10 | CI `GITHUB_TOKEN` declared read-only in `ci.yml`, on top of the repository default | Defense in depth against a compromised third-party action; independent of the repository setting |
+| 2026-11-12 | Step 4.7 plan: 11 blocks, one commit or more per block plus a `docs(state)` commit; F60 first, then mypy on `tests/` (decision I: before F66), the `convert` split and the engine factories before F66 | F60 is the isolated 🟠; mypy then checks every test written afterwards; F66's tests depend on the factories; a `/clear` stays possible between blocks |
+| 2026-11-12 | (A) `httpx2` declared as a dev dependency (`>=2.16.0`) | The transport-level tests import `MockTransport` from it, and the SDK accepts only an `httpx2.AsyncClient`; already locked as a dependency of `anthropic` |
+| 2026-11-12 | (B) `convert` tests split flat, one file per submodule: `test_db_convert_<domain>.py` | One test file per source module (file size rule) |
+| 2026-11-12 | (C) `visual_character` stays `str`, checked by an `AfterValidator` against the `VISUAL_CHARACTERS` frozenset | No type change for callers; a `Literal` would force a change in `org_generation.py` (step 7 module); JSON Schema exposure decided in 4b |
+| 2026-11-12 | (D) One `WorkHours` type in `agents/models.py`, imported by `generator/models.py`: `HH:MM-HH:MM` from 00:00 to 23:59, end before start = window crossing midnight, equal bounds rejected, `24:00` rejected | Equal bounds are ambiguous (empty window or whole day) and "always active" is `None`; a single type keeps a value the interview accepts valid for an agent |
+| 2026-11-12 | (D, implementation) `WorkHours` = `StringConstraints(pattern=...)` with the ranges + an `AfterValidator` for distinct bounds; `[0-9]`, not `\d` | The pattern reaches the JSON Schema; pydantic-core's `\d` matches any Unicode digit. Rejected: one parsing `AfterValidator` (readable messages, but nothing in the schema and more code to test) |
+| 2026-11-12 | (E) Explicit engine factories: `make_engine(url)`, `make_session_factory(engine)` (`expire_on_commit=False`), `create_db_and_tables(engine)`, `get_session(factory)`; no engine at import; the FastAPI app wires them | Tests run the production session configuration; no import-time side effect; no caller to migrate |
+| 2026-11-12 | (E, path) Default database `<repository root>/data/adjents.db`, computed from the package location; an explicit URL or `DATABASE_URL` keeps SQLAlchemy's meaning | Independent of the working directory (`uv sync` installs the package editable, checked); a relative path the user gives stays relative, as everywhere else |
+| 2026-11-12 | (F) `hide_input_in_errors=True` on every domain model (12), set per class — no shared base class | Fields hold user business data and `str(ValidationError)` would carry it into logs; per-class config keeps each model self-contained |
+| 2026-11-12 | (G) `BlockingQuestion`: `answered=True` ⇔ `answer` and `answered_at` set; `answered=False` ⇔ both `None` (model validator, ADR 0004 schema kept) | An inconsistent answer state is no longer representable |
+| 2026-11-12 | (H) The environment template's `DATABASE_URL` line is commented out, so the anchored default applies; SQLite companion files (`*.db-journal`, `*.db-wal`, `*.db-shm`) ignored | The template's relative path would have overridden the anchored default. Rejected: anchoring user-given relative paths on the repository root (non-standard meaning), documenting the trap |
+| 2026-11-12 | API key: stripped whatever its source; blank, or holding whitespace, a control or a non-ASCII character → `LLMConfigError` naming no value; a whitespace-only direct key does not fall back to the environment | A newline in the key made the HTTP layer quote it in the exception chain (checked); non-ASCII rejected too, stricter than the review asked: such a key can only fail authentication |
+| 2026-11-12 | `db/convert.py` split as a pure move, no shared `_json.py` helper; `allow_nan=False` only on the two `metadata` dumps | Function ASTs kept identical (checked); NaN can only reach the dict fields |
+| 2026-11-12 | DB roundtrip tests read back with `populate_existing=True`, plus 2 guard tests corrupting a row in raw SQL | With `expire_on_commit=False` the identity map can serve stale data without a `SELECT`; explicit at the call site. Rejected: `expunge_all()` |
+| 2026-11-12 | No table column default except primary keys; nullable exactly where the domain field accepts `None`; schema drift test on names **and** nullability; one `NOT NULL` test per column | An omitted field fails at commit and in mypy instead of taking a silent value; defaults were Python-side only (identical DDL, checked) |
+| 2026-11-12 | `AgentSpec` constraints raise from step 4.7 on; callers of steps 6–8 untouched, reactions routed (6.3 interview, 7.2 org generation, 8.2 / 8.3 team setup); local constant copies kept until rewired, with a guard test | Valid data defined once for every writer; rewiring a caller belongs to its own walkthrough step |
+| 2026-11-12 | `AwareDatetime` on every domain datetime, without UTC normalization; NaN / infinity rejected in `metadata` (`allow_inf_nan=False`) with `json.dumps(allow_nan=False)` as a backstop | A naive date is rejected at the boundary; normalization deferred to the first `ORDER BY` on a date (Technical debt); a value assigned after validation is not checked |
+| 2026-11-12 | Model contract tests (missing field, JSON roundtrip, no input in errors) written out in each model test file, no shared test helper | One test file per source module; each file readable alone |
+| 2026-11-12 | Prompt frontmatter parser strict: `ValueError` naming the file and the line number, never the line; duplicate keys, unbalanced quotes and non-identifier keys rejected; frontmatter typed `dict[str, str \| int]`; no line-ending code (`read_text()` normalizes) | A malformed file fails at load time instead of reaching the LLM with its frontmatter; a line may hold prompt text |
+| 2026-11-12 | Transport-level tests patch `AsyncAnthropic` with a factory calling the real SDK over `httpx2.MockTransport`; no `http_client` parameter on `AnthropicClient` | The key follows the real client → SDK → header path; adding a parameter would change the public API during a walkthrough, and client lifecycle belongs to the FastAPI app |
+| 2026-11-12 | `complete()` accepts only the `user` / `assistant` roles; any other, `system` included, raises `ValueError` before any request (naming the role and its index, never the content); stated in ADR 0012 §1 by the 4b.2 amendment | No system role in the neutral contract (the system prompt goes through `system`); mid-conversation system messages are Anthropic-specific — decided in step 10 or with the agent loop |
+| 2026-11-12 | The mocked test asserting that no `system` key is passed to the SDK removed after the typed call | It tested the shape of the Python call (`omit` is now always passed); the transport-level test asserts the exact request body |
+| 2026-11-12 | `ANTHROPIC_BASE_URL` / `ANTHROPIC_CUSTOM_HEADERS` left as is in 4.7, routed to the FastAPI app (Technical debt, with F43) | Legitimate uses exist (proxy, gateway); which environment variables the app honors is decided with its environment loading |
+| 2026-11-12 | `Message` docstring and the sentinels Technical debt entry drop the `"system"` sentinel, like ARCHITECTURE §3 / §4 | No code uses it; the code's sentinels are `"user"` and `"generator"` |
+| 2026-11-12 | ARCHITECTURE §9 also loses its last templating traces: "render with test variables" bullet, "YAML frontmatter" heading → "Frontmatter" (the parser is not YAML) | Otherwise §9 contradicts its own rewritten "How prompts are loaded" |
+| 2026-11-12 | ARCHITECTURE §3 sketches show types and rules in comments, plus one paragraph of conventions shared by every model; module docstrings are the reference | A document states what is valid and why; exact copies of `Annotated[...]` declarations would drift at each constraint change |
+| 2026-11-12 | ADR 0010 amended: system prompts are fixed texts, an agent's data reaches the LLM in a message | No prompt is rendered; the decision (agents are data) is unchanged |
+| 2026-11-12 | Milestone "Spec Review" and "Code Review" set to ✅ for the models and database rows, with a footnote | 4.7 fixed every finding routed to it; the others have an owner step (6–8, Technical debt) |
