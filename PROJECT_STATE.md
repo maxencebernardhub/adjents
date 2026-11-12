@@ -1039,7 +1039,7 @@ list: Next steps → Step 4 → 4.7.
 | 1 | Router: API key | F60, F40, F52 (router) | ✅ `2928e43` |
 | 2 | mypy on `tests/` | F2, F65 | ✅ `4eb0d2a`, `e0508ff` |
 | 3 | `db/convert.py` → `db/convert/` package | F19, F26 (imports) | ✅ `ebaf327` |
-| 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | — |
+| 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | ✅ `dac9168` |
 | 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | — |
 | 6 | Tables | F17, F18, F23, F25, F55 | — |
 | 7 | `AgentSpec` constraints | F3, F72, F53, F54 | — |
@@ -1074,7 +1074,9 @@ Decisions taken with the plan (to copy into the Decisions log at the end of 4.7)
 - H — the environment template sets `DATABASE_URL=sqlite:///./data/adjents.db`
   (relative to the working directory), which would override the anchored default
   of F13 → handled in block 4. Also: `.gitignore` gets `data/*.db` (only
-  `data/chroma/` and `data/outputs/` are ignored today).
+  `data/chroma/` and `data/outputs/` are ignored today). **Corrected in block 4**:
+  `*.db` was already ignored (the check grepped "data" only); the template line was
+  commented out instead (option (a), see block 4).
 - I — F2 as block 2, before F66.
 
 Checked while planning: `mypy --strict adjents/ tests/` → 53 errors in 5 files (40
@@ -1147,9 +1149,45 @@ check in block 6).
   block 8.
 - 292 tests; lint, typecheck green.
 
-**Stopped at:** block 3 done. Next: block 4 (engine factories — F14, F15, F46, F59,
-F67, F13, F68; new `test_db_engine.py`; decision E API; decision H: the environment
-template's relative `DATABASE_URL` and `data/*.db` in `.gitignore`).
+### Block 4 — engine factories (`dac9168`)
+
+- Decision H settled with the user: option (a) — the environment template's
+  `DATABASE_URL=sqlite:///./data/adjents.db` line is commented out (edited by the
+  user, as was their local copy), so the anchored default applies; an explicit
+  URL keeps SQLAlchemy's meaning (a relative path stays relative to the working
+  directory). Rejected: (b) anchoring user-given relative paths on the repository
+  root (non-standard meaning), (c) documenting the trap.
+- `db/engine.py` 73 → 132 lines (decision E): `make_engine(url=None)` (url, then
+  `DATABASE_URL` — empty counts as unset —, then the absolute
+  `<repo>/data/adjents.db` computed from `Path(__file__).parents[3]`, valid since
+  `uv sync` installs the package editable, checked), `make_session_factory(engine)`
+  (`expire_on_commit=False`), `create_db_and_tables(engine)` (creates the parent
+  directory except for no database name, `:memory:` and `file:` URIs; then
+  `create_all`), `get_session(factory)`; `import adjents.db.tables` in the module.
+  No engine at import. `_async_url` returns a `URL`, not a string (checked:
+  `str(URL)` masks the password and percent-encodes `:memory:`).
+- Items: F14, F15, F46, F59, F67, F13, F68.
+- New `test_db_engine.py` (18 tests): `_async_url` (6 cases), default anchored on
+  the repository root whatever the working directory, empty / set `DATABASE_URL`,
+  `url` over the environment, no engine at import (fresh process with an empty
+  `DATABASE_URL`), 12 tables created in a fresh process (F46), parent directories
+  created, no directory for the 3 in-memory forms, attribute readable after commit
+  (F15), `get_session`. Red: collection error (the decision E API did not exist);
+  the old behaviors had been reproduced by probes in 4.5 / 4.6. One SQLAlchemy
+  deprecation warning (pool choice for a `mode=memory` URI) filtered on that test
+  case only.
+- `.gitignore`: `*.db-journal`, `*.db-wal`, `*.db-shm` added (SQLite companion
+  files hold database pages; `*.db` was already ignored).
+- ARCHITECTURE §3 "DB engine setup": the sketch showed an engine created at import
+  with the relative path; it now shows the 4 factories.
+- `conftest.py` still builds its own engine: it moves to the factory in block 5
+  (with F66).
+- 310 tests; lint, typecheck green.
+
+**Stopped at:** block 4 done. Next: block 5 (`conftest.py` on
+`make_engine` / `make_session_factory`; **F66** — read back in a fresh session (or
+`expunge_all()`) before `get()`, guard test on a row corrupted in raw SQL; F27 one
+fixture decorator style; F26 corrupt-JSON and unknown-enum tests).
 
 ---
 
@@ -1320,20 +1358,20 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     (datetime / tuple → `ValidationError`, NaN rejected)
   - F12: error tests with one missing field each + assertion on `errors()` locations
   - F10: tautological tests accepted as is (no action)
-  - F13: DB path anchored on the repository root (`data/adjents.db`, ARCHITECTURE
+  - ✅ (block 4, `dac9168`) F13: DB path anchored on the repository root (`data/adjents.db`, ARCHITECTURE
     §1) instead of the working directory; `create_db_and_tables` creates the
     directory; test. F68: directory creation skips in-memory URLs
     (`make_url().database` is `None`, `":memory:"` or a `file:` URI); tests with
     `:memory:` and `tmp_path / "sub" / "a.db"`
-  - F14: engine and session factories in `db/engine.py` (no engine created at
+  - ✅ (block 4, `dac9168`; `conftest.py` switch in block 5) F14: engine and session factories in `db/engine.py` (no engine created at
     import), used by `conftest.py`; new `test_db_engine.py` (`_async_url`,
     `create_db_and_tables`, `get_session`). F67: `os.getenv(...) or default` (an
     empty `DATABASE_URL` fails at import today) and a rewrite based on
     `make_url().drivername` (handles `sqlite://`); tests for `""`, `sqlite://`
-  - F46 (with F14): `engine.py` imports `adjents.db.tables` (`# noqa: F401`) so
+  - ✅ (block 4, `dac9168`) F46 (with F14): `engine.py` imports `adjents.db.tables` (`# noqa: F401`) so
     `create_db_and_tables` always registers the 12 tables; test in a fresh process
-  - F15: `expire_on_commit=False` in the shared session factory + test (attribute
-    read after commit raises `MissingGreenlet` today). **F66 (🟠, first)**: once
+  - ✅ F15 (block 4, `dac9168`): `expire_on_commit=False` in the shared session factory + test (attribute
+    read after commit raises `MissingGreenlet` today). **F66 (🟠, first — block 5)**: once
     `conftest` uses that factory, `session.get()` after commit returns the
     identity-map object without any `SELECT`, so the 33 DB roundtrip reads would no
     longer read SQLite — read back in a fresh session (or `expunge_all()`) and add a
@@ -1408,7 +1446,7 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     structure), never LLM errors (ADR 0012 sentence: step 4b.2)
   - F58 (with F33 / F44): `_parse_frontmatter` docstring matches the rewritten parser
     (empty frontmatter block)
-  - F59 (with F14): `_async_url` — remove the redundant `"aiosqlite" not in raw`
+  - ✅ (block 4, `dac9168`) F59 (with F14): `_async_url` — remove the redundant `"aiosqlite" not in raw`
     clause; test with a path containing "aiosqlite"
 
   From the 4.6 code review (`docs/reviews/2026-10-29-foundations-code-review.md`);
@@ -1744,6 +1782,11 @@ Branch: `feat/llm-router` — full `/feature` workflow
   another error. No such boundary today → add `__reduce__` + a pickle roundtrip test
   per class at the first one (e.g. eval runs, **step 10**) (step 4.6 code review,
   F64)
+- The environment template sets `CHROMA_PATH=./data/chroma`, a path relative to the
+  working directory — the same trap as `DATABASE_URL` before step 4.7 (F13). No code
+  reads `CHROMA_PATH` yet. When the memory layer reads it: default anchored on the
+  repository root like `db/engine.py` (`<repo>/data/chroma`), template line
+  commented out the same way → **Memory feature** (step 4.7, block 4)
 
 ---
 
