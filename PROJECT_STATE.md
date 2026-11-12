@@ -1040,7 +1040,7 @@ list: Next steps → Step 4 → 4.7.
 | 2 | mypy on `tests/` | F2, F65 | ✅ `4eb0d2a`, `e0508ff` |
 | 3 | `db/convert.py` → `db/convert/` package | F19, F26 (imports) | ✅ `ebaf327` |
 | 4 | Engine factories | F14, F15, F46, F59, F67, F13, F68 | ✅ `dac9168` |
-| 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | — |
+| 5 | `conftest` on the factory + F66 guard | F66, F27, F26 (corrupt JSON, unknown enum) | ✅ `ccff431` |
 | 6 | Tables | F17, F18, F23, F25, F55 | — |
 | 7 | `AgentSpec` constraints | F3, F72, F53, F54 | — |
 | 8 | Other model contracts | F4, F5, F61, F62, F1, F9, F12, F26 (naive date) | — |
@@ -1184,10 +1184,39 @@ check in block 6).
   (with F66).
 - 310 tests; lint, typecheck green.
 
-**Stopped at:** block 4 done. Next: block 5 (`conftest.py` on
-`make_engine` / `make_session_factory`; **F66** — read back in a fresh session (or
-`expunge_all()`) before `get()`, guard test on a row corrupted in raw SQL; F27 one
-fixture decorator style; F26 corrupt-JSON and unknown-enum tests).
+### Block 5 — `conftest` on the factories + F66 guard (`ccff431`)
+
+- F14 (end): `async_session` built with `make_engine("sqlite+aiosqlite://")`,
+  `create_db_and_tables`, `make_session_factory` — tests now run the production
+  session configuration (`expire_on_commit=False`). F27: `@pytest.fixture` only
+  (`asyncio_mode = "auto"`), `pytest_asyncio` import removed.
+- F66 refined by probe: with `expire_on_commit=False`, `session.get()` after commit
+  issues no `SELECT` and returns stale data **only while the test holds a
+  reference to the row** (the identity map holds unmodified objects weakly) —
+  the roundtrips do (`row = ..._to_table(...)`). `populate_existing=True` and
+  `expunge_all()` both reload from SQLite; `populate_existing=True` chosen
+  (explicit at the call site).
+- The `conftest` switch alone left all 310 tests green, the 18 convert roundtrips
+  included — they could no longer fail (the F66 risk). Two guard tests (F26 + F66,
+  `test_db_convert_agents.py`) corrupt a committed row in raw SQL through
+  `session.connection()` (`skills.inputs = 'not json'` → `JSONDecodeError`;
+  `agent_states.status = 'flying'` → `ValueError`). Red: `DID NOT RAISE` on both (a
+  first red was a false one — `NameError`: the formatter hook had removed imports
+  added before their use). Green: `populate_existing=True` on the 20 reads (2
+  guards + 18 roundtrips, 6 files).
+- Known gap until block 6: the 15 `session.get()` reads of `test_db_tables.py` are
+  now served from the session too; F25 (block 6) replaces those SQLAlchemy-only
+  roundtrips with constraint tests.
+- No other test depended on objects expiring at commit (interview, org generation,
+  team setup, reconfiguration tests unchanged and green).
+- 312 tests; lint, typecheck green.
+
+**Stopped at:** block 5 done. Next: block 6 (tables — F17 remove the table defaults
+that diverge from the domain, check whether removing `default=None` on nullable
+columns changes anything in SQL; F18 schema drift test over the 12 pairs; F23
+`test_all_tables_exist`; F25 constraint tests replacing the roundtrips of
+`test_db_tables.py`; F55 `db/tables.py` docstring — the interview also updates a
+loaded row in place).
 
 ---
 
@@ -1363,15 +1392,17 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     directory; test. F68: directory creation skips in-memory URLs
     (`make_url().database` is `None`, `":memory:"` or a `file:` URI); tests with
     `:memory:` and `tmp_path / "sub" / "a.db"`
-  - ✅ (block 4, `dac9168`; `conftest.py` switch in block 5) F14: engine and session factories in `db/engine.py` (no engine created at
-    import), used by `conftest.py`; new `test_db_engine.py` (`_async_url`,
+  - ✅ (block 4, `dac9168`; `conftest.py` in block 5, `ccff431`) F14: engine and
+    session factories in `db/engine.py` (no engine created at import), used by
+    `conftest.py`; new `test_db_engine.py` (`_async_url`,
     `create_db_and_tables`, `get_session`). F67: `os.getenv(...) or default` (an
     empty `DATABASE_URL` fails at import today) and a rewrite based on
     `make_url().drivername` (handles `sqlite://`); tests for `""`, `sqlite://`
   - ✅ (block 4, `dac9168`) F46 (with F14): `engine.py` imports `adjents.db.tables` (`# noqa: F401`) so
     `create_db_and_tables` always registers the 12 tables; test in a fresh process
   - ✅ F15 (block 4, `dac9168`): `expire_on_commit=False` in the shared session factory + test (attribute
-    read after commit raises `MissingGreenlet` today). **F66 (🟠, first — block 5)**: once
+    read after commit raises `MissingGreenlet` today). ✅ **F66 (🟠, block 5,
+    `ccff431`)**: once
     `conftest` uses that factory, `session.get()` after commit returns the
     identity-map object without any `SELECT`, so the 33 DB roundtrip reads would no
     longer read SQLite — read back in a fresh session (or `expunge_all()`) and add a
@@ -1391,8 +1422,8 @@ Walkthrough notes and findings: `docs/walkthroughs/step-4-foundations.md`.
     rejections), alongside F18
   - F26: `test_db_convert.py` — module-level imports (✅ block 3, `ebaf327`); tests
     for a naive date (block 8), corrupt JSON and an unknown enum value in a row
-    (block 5)
-  - F27: one fixture decorator style in `conftest.py` (team setup fixtures move in
+    (✅ block 5, `ccff431`)
+  - ✅ (block 5, `ccff431`) F27: one fixture decorator style in `conftest.py` (team setup fixtures move in
     8.3)
   - F32 (Q7): remove `LoadedPrompt.render()` and its 2 tests (fails on the prompts'
     own JSON braces; unused in production)
